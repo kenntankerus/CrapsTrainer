@@ -1,0 +1,15 @@
+{
+  "hue_low": 36,
+  "hue_high": 100,
+  "sat_low": 10,
+  "val_low": 15,
+  "min_die_area": 1500,
+  "white_level": 180,
+  "exposure": -2,
+  "roi": [
+    460,
+    0,
+    1560,
+    1080
+  ]
+}

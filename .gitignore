@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+
+# debug captures
+settled_*.png
+capture_frame.png
+capture_mask.png
+_face*.png
+unclear_frames/
+
+# regenerated locally
+voice_cache/
+dice_model.npz
+tracker_state.json
