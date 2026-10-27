@@ -59,7 +59,7 @@ FIELDS = ["timestamp", "session", "dice_set", "die1", "die2", "total", "back_wal
           "camera_read", "throw_id"]
 # camera_read: what the camera said ("3-5"), "unclear" if it couldn't read the dice, "" for typed throws
 UNCLEAR_WINDOW = 120             # seconds: a throw typed this soon after an unclear read gets its pictures
-DEFAULT_SETS = ["3-V", "Hardway", "All Sevens", "Parallel", "Cross-Sixes", "Axis"]
+DEFAULT_SETS = ["3-V", "Hardway", "All Sevens", "Parallel", "Cross-Sixes", "Axis", "Random"]
 DEFAULT_POSITIONS = ["12 o'clock", "Stick left", "Stick right"]
 UNSPECIFIED = "Unspecified"                  # used for older throws logged before positions existed
 COMPARE_MODES = ["Dice set", "Position", "Set + Position"]
