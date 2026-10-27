@@ -304,12 +304,12 @@ def _build_creature_lines():
     """The Gollum-ish stickman's own words. Any line missing here falls back to the normal one."""
     lines = {
         "no_roll": (["No roll! It must touch the wall, precious, the wall!", "Short, short! Nasty throw. No roll!"], "calm"),
-        "co_7": (["Seven! We wins, precious, front line wins!", "Seven, seven! Pay the line, gollum, gollum!"], "hype"),
+        "co_7": (["Seven! We wins, precious, front line wins!", "Seven, seven! Pay the line, [gulps] gollum, gollum!"], "hype"),
         "co_11": (["Eleven! Lucky, lucky! Pay the line!", "Yo eleven! Shiny, shiny eleven!"], "hype"),
         "co_2": (["Two little aces. Craps. We hates it!", "Aces! Craps, precious. Line goes away."], "down"),
         "co_3": (["Three. Craps, precious. Takes our line, it does.", "Ace-deuce, craps! Tricksy dice."], "down"),
-        "co_12": (["Twelve! Boxcars! Craps, nasty craps!", "Midnight twelve. Craps. Tricksy, tricksy dice."], "down"),
-        "out": (["Seven out! No, no, no! It's gone, precious, all gone!",
+        "co_12": (["Twelve! Boxcars! Craps, nasty craps!", "Midnight twelve. Craps. [mischievously] Tricksy, tricksy dice."], "down"),
+        "out": (["[crying] Seven out! No, no, no! It's gone, precious, all gone!",
                  "Seven... out. We hates sevens. Hates them forever!",
                  "Seven out! Thief! Takes our line, it does!"], "down"),
         "pt_2": (["Two! Field pays double, precious, double!"], "calm"),
@@ -320,9 +320,9 @@ def _build_creature_lines():
         "num_9": (["Nine. Field nine, precious.", "Nine! We counts it. Nine."], "calm"),
         "bonus_Small": (["All the small ones, every one! Pay the Small, precious!"], "hype"),
         "bonus_Tall": (["All the tall ones! The Tall pays, yes, yes!"], "hype"),
-        "bonus_All": (["We makes them all! Every number! Ours, precious, ours!"], "hype"),
+        "bonus_All": (["[laughs] We makes them all! Every number! Ours, precious, ours!"], "hype"),
         "coming_out": (["Coming out, precious. Throw it, throw it!", "Dice is coming out. Careful, careful."], "cheer"),
-        "new_shooter": (["New shooter. We doesn't trust them, no.", "Next one coming out. Sneaky shooter."], "calm"),
+        "new_shooter": (["[whispers] New shooter. We doesn't trust them, no.", "Next one coming out. Sneaky shooter."], "calm"),
         "good_roll": (["Good hand, precious. Long, long hand."], "cheer"),
     }
     pairs = {4: "twos", 6: "threes", 8: "fours", 10: "fives"}
@@ -335,7 +335,7 @@ def _build_creature_lines():
         lines[f"co_point_{n}"] = ([f"{w.capitalize()}! The point is {w}, precious. Mark it, mark it!",
                                    f"{w.capitalize()} is the point. We remembers it, yes."], "cheer")
         lines[f"made_{n}"] = ([f"{w.capitalize()}! Point made! We wins, we wins, precious!",
-                              f"Winner {w}! Pay the line, gollum, gollum!"], "hype")
+                              f"Winner {w}! Pay the line, [gulps] gollum, gollum!"], "hype")
         if n % 2 == 0:
             lines[f"made_hard_{n}"] = ([f"Hard {w}, the point! Pay the line and the hardway, precious!"], "hype")
     for n, w in WORDS.items():
@@ -348,6 +348,11 @@ def _build_creature_lines():
 def shlur(text):
     """'Six, the hard way' -> 'Shix, the hard way'. Keeps 'sh' as it is and the capital letters."""
     return re.sub(r"[sS](?![hH])", lambda m: "Sh" if m.group() == "S" else "sh", text)
+
+
+def strip_tags(text):
+    """Drop ElevenLabs stage directions like '[whispers] ', which other voices would read out."""
+    return re.sub(r"\[[^\]]*\]\s*", "", text)
 
 
 def hiss(text):
@@ -415,14 +420,23 @@ def croupier_call(throws, voice=DEFAULT_VOICE):
     pieces = []
     for key in keys[:3]:
         variants, mood = lines[key]
-        pieces.append((variants[variant % len(variants)], mood))
+        i = variant % len(variants)
+        pieces.append((variants[i], mood, f"{key}_{i}"))
     return pieces
+
+
+PACK_DIR = os.path.join(HERE, "voice_packs")      # recorded lines, made by make_voice_pack.py
+
+
+def pack_folder(voice):
+    return os.path.join(PACK_DIR, re.sub(r"[^A-Za-z0-9]+", "_", voice).strip("_"))
 
 
 class Speaker:
     """Speaks the stickman's lines with an edge-tts voice (needs internet the first time a line is used) and plays
     them through Windows' own audio. Clips are kept in voice_cache, and prepare() makes every line ahead of time,
-    so calls play the moment the dice settle. Without edge-tts or the network it falls back to the Windows voice."""
+    so calls play the moment the dice settle. Without edge-tts or the network it falls back to the Windows voice.
+    A line recorded in the voice's pack (voice_packs/<voice>/<line>.mp3) is played instead of being made."""
     FALLBACK = ("Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
                 "while (($l = [Console]::In.ReadLine()) -ne $null) { $s.SpeakAsyncCancelAll(); $s.SpeakAsync($l) | Out-Null }")
 
@@ -438,6 +452,7 @@ class Speaker:
         name, rate_shift, pitch_shift, bend = VOICES[voice]
         rate, pitch, volume = MOODS[mood]
         rate, pitch, volume = f"{rate + rate_shift:+d}%", f"{pitch + pitch_shift:+d}Hz", f"{volume:+d}%"
+        text = strip_tags(text)
         if bend:
             text = bend(text)
         key = f"{name}{rate}{pitch}{volume}{text}"
@@ -460,7 +475,9 @@ class Speaker:
         async def make_all():
             import asyncio
             gate = asyncio.Semaphore(4)
-            missing = [clip for variants, mood in voice_lines(voice).values() for text in variants
+            pack = pack_folder(voice)
+            missing = [clip for key, (variants, mood) in voice_lines(voice).items() for i, text in enumerate(variants)
+                       if not os.path.exists(os.path.join(pack, f"{key}_{i}.mp3"))
                        for clip in [self._clip(text, mood, voice)] if not os.path.exists(clip[0])]
 
             async def one(path, args):
@@ -488,7 +505,11 @@ class Speaker:
         try:
             import asyncio
             paths = []
-            for text, mood in pieces:
+            for text, mood, name in pieces:
+                recorded = os.path.join(pack_folder(voice), name + ".mp3")
+                if os.path.exists(recorded):
+                    paths.append(recorded)
+                    continue
                 path, args = self._clip(text, mood, voice)
                 if not os.path.exists(path):
                     os.makedirs(self.cache_dir, exist_ok=True)
@@ -496,7 +517,7 @@ class Speaker:
                 paths.append(path)
         except Exception:
             if ticket == self.latest:
-                self._fallback(" ".join(text for text, _ in pieces))
+                self._fallback(" ".join(strip_tags(piece[0]) for piece in pieces))
             return
         self._play_all(paths, ticket)
 
@@ -548,7 +569,7 @@ def _code_timestamp():
     return datetime.fromtimestamp(newest).strftime("%Y-%m-%d %H:%M:%S")
 
 
-CAMERA_INDEX = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+CAMERA_INDEX = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 1    # other scripts import this file
 
 # Chance of each total with two fair dice: 2 -> 1/36, 7 -> 6/36, 12 -> 1/36
 EXPECTED = {total: (6 - abs(total - 7)) / 36 for total in range(2, 13)}

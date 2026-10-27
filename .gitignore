@@ -14,3 +14,4 @@ dice_model.npz
 tracker_state.json
 craps_game_state.json
 sounds/
+voice_packs/

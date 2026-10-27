@@ -116,7 +116,8 @@ def stickman_call(result, variant, voice):
     pieces = []
     for key in keys[:3]:
         variants, mood = lines[key]
-        pieces.append((variants[variant % len(variants)], mood))
+        i = variant % len(variants)
+        pieces.append((variants[i], mood, f"{key}_{i}"))
     return pieces
 
 
