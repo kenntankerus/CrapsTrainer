@@ -88,7 +88,7 @@ def replace_throw(throw_id, throw=None):
         writer.writerows(rows)
 
 
-def stickman_call(result, variant):
+def stickman_call(result, variant, voice):
     """The stickman's words for a roll (None = a no-roll), as (text, mood) pieces from the tracker's lines."""
     if result is None:
         keys = ["no_roll"]
@@ -112,9 +112,10 @@ def stickman_call(result, variant):
             keys.append(f"hot_{result['shooter_rolls']}")
         if result["bonus_wins"]:
             keys.insert(1, f"bonus_{result['bonus_wins'][-1]}")
+    lines = tracker.voice_lines(voice)
     pieces = []
     for key in keys[:3]:
-        variants, mood = tracker.LINES[key]
+        variants, mood = lines[key]
         pieces.append((variants[variant % len(variants)], mood))
     return pieces
 
@@ -850,7 +851,7 @@ class CrapsGame:
         self.save_game()
         if self.voice_var.get() in tracker.VOICES:
             self.calls += 1
-            self.speaker.say(stickman_call(result, self.calls), voice=self.voice_var.get())
+            self.speaker.say(stickman_call(result, self.calls, self.voice_var.get()), voice=self.voice_var.get())
 
     def fix_last(self):
         """Take back the last roll and settle it again with the dice typed in the box."""

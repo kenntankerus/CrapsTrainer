@@ -300,15 +300,49 @@ def _build_lines():
 
 LINES = _build_lines()
 
-# How each mood is spoken: (rate %, pitch Hz, volume %)
-MOODS = {"hype": (14, 14, 10), "cheer": (8, 6, 0), "calm": (4, 0, 0), "down": (-4, -8, -5)}
-# Voice name -> (edge-tts voice, rate shift %, pitch shift Hz, slur the s's)
-VOICES = {"Andrew": ("en-US-AndrewNeural", 0, 0, False),
-          "Brian": ("en-US-BrianNeural", 0, 0, False),
-          "Ava": ("en-US-AvaNeural", 0, 0, False),
-          "Aria": ("en-US-AriaNeural", 0, 0, False),
-          "Shean (Connery-ish)": ("en-GB-RyanNeural", -10, -14, True)}
-DEFAULT_VOICE = "Andrew"
+def _build_creature_lines():
+    """The Gollum-ish stickman's own words. Any line missing here falls back to the normal one."""
+    lines = {
+        "no_roll": (["No roll! It must touch the wall, precious, the wall!", "Short, short! Nasty throw. No roll!"], "calm"),
+        "co_7": (["Seven! We wins, precious, front line wins!", "Seven, seven! Pay the line, gollum, gollum!"], "hype"),
+        "co_11": (["Eleven! Lucky, lucky! Pay the line!", "Yo eleven! Shiny, shiny eleven!"], "hype"),
+        "co_2": (["Two little aces. Craps. We hates it!", "Aces! Craps, precious. Line goes away."], "down"),
+        "co_3": (["Three. Craps, precious. Takes our line, it does.", "Ace-deuce, craps! Tricksy dice."], "down"),
+        "co_12": (["Twelve! Boxcars! Craps, nasty craps!", "Midnight twelve. Craps. Tricksy, tricksy dice."], "down"),
+        "out": (["Seven out! No, no, no! It's gone, precious, all gone!",
+                 "Seven... out. We hates sevens. Hates them forever!",
+                 "Seven out! Thief! Takes our line, it does!"], "down"),
+        "pt_2": (["Two! Field pays double, precious, double!"], "calm"),
+        "pt_3": (["Three, ace-deuce. Field wins, yes."], "calm"),
+        "pt_11": (["Yo eleven! Shiny eleven!", "Eleven! We likes eleven."], "cheer"),
+        "pt_12": (["Twelve! Field pays triple, precious, triple!"], "calm"),
+        "num_5": (["Five. No field five. Five little fingers.", "Five, precious. Just five."], "calm"),
+        "num_9": (["Nine. Field nine, precious.", "Nine! We counts it. Nine."], "calm"),
+        "bonus_Small": (["All the small ones, every one! Pay the Small, precious!"], "hype"),
+        "bonus_Tall": (["All the tall ones! The Tall pays, yes, yes!"], "hype"),
+        "bonus_All": (["We makes them all! Every number! Ours, precious, ours!"], "hype"),
+        "coming_out": (["Coming out, precious. Throw it, throw it!", "Dice is coming out. Careful, careful."], "cheer"),
+        "new_shooter": (["New shooter. We doesn't trust them, no.", "Next one coming out. Sneaky shooter."], "calm"),
+        "good_roll": (["Good hand, precious. Long, long hand."], "cheer"),
+    }
+    pairs = {4: "twos", 6: "threes", 8: "fours", 10: "fives"}
+    for n, pair in pairs.items():
+        w = WORDS[n]
+        lines[f"hard_{n}"] = ([f"Hard {w}! Two {pair}, together, the hard way, precious!"], "cheer")
+        lines[f"easy_{n}"] = ([f"{w.capitalize()}, easy {w}. Easy, easy."], "calm")
+    for n in POINT_NUMBERS:
+        w = WORDS[n]
+        lines[f"co_point_{n}"] = ([f"{w.capitalize()}! The point is {w}, precious. Mark it, mark it!",
+                                   f"{w.capitalize()} is the point. We remembers it, yes."], "cheer")
+        lines[f"made_{n}"] = ([f"{w.capitalize()}! Point made! We wins, we wins, precious!",
+                              f"Winner {w}! Pay the line, gollum, gollum!"], "hype")
+        if n % 2 == 0:
+            lines[f"made_hard_{n}"] = ([f"Hard {w}, the point! Pay the line and the hardway, precious!"], "hype")
+    for n, w in WORDS.items():
+        lines[f"b2b_{n}"] = ([f"{w.capitalize()} again! Back to back, precious!"], "cheer")
+    for k in HOT_ROLLS:
+        lines[f"hot_{k}"] = ([f"{k} rolls! Shooter is hot, precious, hot, hot!"], "hype")
+    return lines
 
 
 def shlur(text):
@@ -316,7 +350,29 @@ def shlur(text):
     return re.sub(r"[sS](?![hH])", lambda m: "Sh" if m.group() == "S" else "sh", text)
 
 
-def croupier_call(throws):
+def hiss(text):
+    """'Yes, precious' -> 'Yesss, preciousss': draws out an s at the end of a word."""
+    return re.sub(r"(?<=\w)s\b", "sss", text)
+
+
+# How each mood is spoken: (rate %, pitch Hz, volume %)
+MOODS = {"hype": (14, 14, 10), "cheer": (8, 6, 0), "calm": (4, 0, 0), "down": (-4, -8, -5)}
+# Voice name -> (edge-tts voice, rate shift %, pitch shift Hz, how the words are bent before speaking)
+VOICES = {"Andrew": ("en-US-AndrewNeural", 0, 0, None),
+          "Brian": ("en-US-BrianNeural", 0, 0, None),
+          "Ava": ("en-US-AvaNeural", 0, 0, None),
+          "Aria": ("en-US-AriaNeural", 0, 0, None),
+          "Shean (Connery-ish)": ("en-GB-RyanNeural", -10, -14, shlur),
+          "Precious (Gollum-ish)": ("en-GB-ThomasNeural", 6, 22, hiss)}
+CHARACTER_LINES = {"Precious (Gollum-ish)": _build_creature_lines()}
+DEFAULT_VOICE = "Andrew"
+
+
+def voice_lines(voice):
+    return {**LINES, **CHARACTER_LINES.get(voice, {})}
+
+
+def croupier_call(throws, voice=DEFAULT_VOICE):
     """What the stickman says about the last throw, as a list of (text, mood) pieces played one after another."""
     last = throws[-1]
     variant = len(throws)                   # rotates through each line's variants, so the same words don't repeat
@@ -355,9 +411,10 @@ def croupier_call(throws):
         wins = [w for w in bonus_status(throws)[4] if w["time"] == last["timestamp"]]
         if wins:
             keys.insert(1, f"bonus_{wins[-1]['kind']}")
+    lines = voice_lines(voice)
     pieces = []
     for key in keys[:3]:
-        variants, mood = LINES[key]
+        variants, mood = lines[key]
         pieces.append((variants[variant % len(variants)], mood))
     return pieces
 
@@ -378,11 +435,11 @@ class Speaker:
 
     def _clip(self, text, mood, voice):
         """(path, edge-tts arguments) for one line."""
-        name, rate_shift, pitch_shift, slur = VOICES[voice]
+        name, rate_shift, pitch_shift, bend = VOICES[voice]
         rate, pitch, volume = MOODS[mood]
         rate, pitch, volume = f"{rate + rate_shift:+d}%", f"{pitch + pitch_shift:+d}Hz", f"{volume:+d}%"
-        if slur:
-            text = shlur(text)
+        if bend:
+            text = bend(text)
         key = f"{name}{rate}{pitch}{volume}{text}"
         path = os.path.join(self.cache_dir, hashlib.md5(key.encode()).hexdigest() + ".mp3")
         return path, (text, name, rate, pitch, volume)
@@ -403,7 +460,7 @@ class Speaker:
         async def make_all():
             import asyncio
             gate = asyncio.Semaphore(4)
-            missing = [clip for variants, mood in LINES.values() for text in variants
+            missing = [clip for variants, mood in voice_lines(voice).values() for text in variants
                        for clip in [self._clip(text, mood, voice)] if not os.path.exists(clip[0])]
 
             async def one(path, args):
@@ -1073,7 +1130,7 @@ class DiceTracker:
 
     def speak_call(self):
         if self.voice_var.get() in VOICES:
-            self.speaker.say(croupier_call(self.throws), voice=self.voice_var.get())
+            self.speaker.say(croupier_call(self.throws, self.voice_var.get()), voice=self.voice_var.get())
 
     def refresh_bonus(self):
         hit, run, small_done, tall_done, wins, _ = bonus_status(self.throws)
