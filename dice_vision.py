@@ -45,6 +45,7 @@ SPLIT_ASPECT = 1.6              # a blob this much longer than wide is treated a
 WHITE_LEVEL = 180              # how bright a spot must be to count as a pip
 
 EXPOSURE = -2                   # camera brightness; None lets the camera choose
+FOCUS = None                    # lens focus with autofocus off (Brio: 0-255, lower = farther away); None keeps the camera's own
 FRAME_WIDTH, FRAME_HEIGHT = 1920, 1080
 
 STILL_SECONDS = 0.35            # how long the dice must sit still before the throw is reported
@@ -73,7 +74,8 @@ REFERENCE_WIDTH = 1920
 SETTINGS_FILE = os.path.join(HERE, "dice_settings.json")
 _SAVED_NAMES = {"hue_low": "HUE_LOW", "hue_high": "HUE_HIGH", "sat_low": "SAT_LOW",
                 "val_low": "VAL_LOW", "min_die_area": "MIN_DIE_AREA",
-                "white_level": "WHITE_LEVEL", "exposure": "EXPOSURE", "roi": "ROI"}
+                "white_level": "WHITE_LEVEL", "exposure": "EXPOSURE", "roi": "ROI", "focus": "FOCUS",
+                "two_dice_area": "TWO_DICE_AREA"}
 
 
 def _load_saved_settings():
@@ -380,6 +382,8 @@ class DiceCamera:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
         cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+        if FOCUS is not None:
+            cap.set(cv2.CAP_PROP_FOCUS, FOCUS)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)        # always hand us the newest picture, not a queued one
         if EXPOSURE is not None:
             cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)     # 0.25 = manual on Windows cameras

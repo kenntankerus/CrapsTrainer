@@ -104,6 +104,8 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)   # no refocusing when dice tumble through (ignored if unsupported)
+    if dv.FOCUS is not None:
+        cap.set(cv2.CAP_PROP_FOCUS, dv.FOCUS)
     exposure = None       # None = camera chooses; the - and = keys switch to manual
     if EXPOSURE is not None:
         cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
