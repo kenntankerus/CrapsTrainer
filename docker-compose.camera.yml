@@ -1,0 +1,9 @@
+# Lets the web server use the webcam plugged into this machine. Turn it on with this line in .env:
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.camera.yml
+# If the camera isn't /dev/video0, change it here (ls /dev/video* lists them) and set CRAPS_CAMERA to match.
+services:
+  web:
+    devices:
+      - /dev/video0:/dev/video0
+    group_add:
+      - video

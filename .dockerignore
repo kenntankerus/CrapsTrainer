@@ -12,4 +12,5 @@ __pycache__
 !web/static/*.png
 dice_throws.csv
 *.json
+!dice_settings.json
 !web/static/*.webmanifest

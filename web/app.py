@@ -5,6 +5,7 @@ Pages come from web/static; everything the page does goes through /api. Each sig
 has a table with its own player plus any guests, and each player has a bankroll, bets and a throw log.
 """
 
+import asyncio
 import csv
 import io
 import json
@@ -17,7 +18,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response as RawResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -29,7 +30,7 @@ from craps_engine import HOP_COMBOS, BetError, money  # noqa: E402
 from dice_stats import COMPARE_MODES, HARDWAY_SETUPS  # noqa: E402
 from stickman import DEFAULT_VOICE, VOICES, pack_name  # noqa: E402
 
-from . import auth, db, mail, stats, tables, voice  # noqa: E402
+from . import auth, camera, db, events, mail, stats, tables, voice  # noqa: E402
 
 log = logging.getLogger("craps")
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -43,9 +44,14 @@ FIELDS = ["timestamp", "session", "dice_set", "die1", "die2", "total", "back_wal
 @asynccontextmanager
 async def lifespan(app):
     db.init()
+    events.bind(asyncio.get_running_loop())
+    camera.setup()
     if not config.SMTP_HOST:
         log.warning("CRAPS_SMTP_HOST isn't set: sign-in links are written to this log instead of being emailed.")
+    if config.CAMERA_SOURCE and camera.dv is None:
+        log.warning("CRAPS_CAMERA is set but the camera can't run: %s", camera.IMPORT_ERROR)
     yield
+    camera.service.stop()
 
 
 app = FastAPI(title=config.SITE_NAME, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -56,20 +62,39 @@ CSP = ("default-src 'self'; script-src 'self' https://challenges.cloudflare.com;
        "media-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
-@app.middleware("http")
-async def guard(request: Request, call_next):
-    # A page on another site can't add this header, so it can't make changes with the visitor's cookie
-    if request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD") \
-            and request.headers.get("x-requested-with") != "craps":
-        return JSONResponse({"error": "Missing request header."}, status_code=403)
-    response = await call_next(request)
-    response.headers.setdefault("Content-Security-Policy", CSP)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "no-referrer"       # sign-in links carry their token in the address
-    response.headers["X-Frame-Options"] = "DENY"
-    if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
-        response.headers["Cache-Control"] = "no-store"
-    return response
+class Guard:
+    """Refuses changes without the page's own header (a page on another site can't add it, so it can't act
+    with the visitor's cookie), and adds the security headers to every response. Plain ASGI rather than
+    @app.middleware, which would hold up the live event stream."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        path = scope["path"]
+        headers = {k.decode().lower(): v.decode() for k, v in scope["headers"]}
+        if path.startswith("/api/") and scope["method"] not in ("GET", "HEAD") \
+                and headers.get("x-requested-with") != "craps":
+            return await JSONResponse({"error": "Missing request header."}, status_code=403)(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                have = {k.decode().lower() for k, _ in message.get("headers", [])}
+                extra = [("content-security-policy", CSP), ("x-content-type-options", "nosniff"),
+                         ("referrer-policy", "no-referrer"),       # sign-in links carry their token in the address
+                         ("x-frame-options", "DENY")]
+                if path.startswith("/api/"):
+                    extra.append(("cache-control", "no-store"))
+                message["headers"] = list(message.get("headers", [])) + [
+                    (k.encode(), v.encode()) for k, v in extra if k not in have]
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(Guard)
 
 
 @app.exception_handler(BetError)
@@ -126,6 +151,15 @@ def check_name(name):
     if not NAME_RE.match(name):
         raise HTTPException(400, "Names are 1 to 30 characters.")
     return name
+
+
+def client_of(request: Request):
+    """Each open page names itself, so it can skip the news of its own changes."""
+    return (request.headers.get("x-client-id") or "")[:40]
+
+
+def changed(user, request, player_id=None, kind="changed"):
+    events.publish(user["id"], kind, player_id=player_id, client=client_of(request))
 
 
 def check_cents(cents):
@@ -237,7 +271,8 @@ def me(user=Depends(signed_in)):
         throws += tables.player_throws(db.connect(), p["id"])
     sets, positions = stats.known_names(throws)
     return {"email": user["email"], "name": user["name"], "settings": settings, "players": players,
-            "sets": sets, "positions": positions, "max_guests": config.MAX_GUESTS}
+            "sets": sets, "positions": positions, "max_guests": config.MAX_GUESTS,
+            "camera": camera.service.status(user)}
 
 
 class Settings(BaseModel):
@@ -261,7 +296,7 @@ class MeUpdate(BaseModel):
 
 
 @app.post("/api/me")
-def update_me(body: MeUpdate, user=Depends(signed_in)):
+def update_me(body: MeUpdate, request: Request, user=Depends(signed_in)):
     with db.transaction() as conn:
         if body.name is not None:
             name = check_name(body.name)
@@ -286,6 +321,8 @@ def update_me(body: MeUpdate, user=Depends(signed_in)):
                 tables.player_row(conn, user["id"], new["player_id"])
             current.update(new)
             conn.execute("UPDATE users SET settings = ? WHERE id = ?", (json.dumps(current), user["id"]))
+    if body.name is not None:
+        changed(user, request, kind="players")
     return {"ok": True}
 
 
@@ -299,6 +336,8 @@ def delete_me(body: Confirm, response: Response, user=Depends(signed_in)):
         raise HTTPException(400, "Type DELETE to confirm.")
     throw_ids = [r["throw_id"] for r in db.all_rows(
         "SELECT t.throw_id FROM throws t JOIN players p ON p.id = t.player_id WHERE p.owner_id = ?", user["id"])]
+    if camera.service.owner and camera.service.owner["user_id"] == user["id"]:
+        camera.service.stop()
     with db.transaction() as conn:
         conn.execute("DELETE FROM links WHERE email = ?", (user["email"],))
         conn.execute("DELETE FROM users WHERE id = ?", (user["id"],))
@@ -327,7 +366,7 @@ class PlayerName(BaseModel):
 
 
 @app.post("/api/players")
-def add_guest(body: PlayerName, user=Depends(signed_in)):
+def add_guest(body: PlayerName, request: Request, user=Depends(signed_in)):
     name = check_name(body.name)
     with db.transaction() as conn:
         guests = conn.execute("SELECT COUNT(*) FROM players WHERE owner_id = ? AND is_self = 0", (user["id"],)).fetchone()[0]
@@ -335,22 +374,24 @@ def add_guest(body: PlayerName, user=Depends(signed_in)):
             raise HTTPException(400, f"A table seats {config.MAX_GUESTS} guests at most.")
         player_id = conn.execute("INSERT INTO players (owner_id, is_self, name, created) VALUES (?, 0, ?, ?)",
                                  (user["id"], name, datetime.now().isoformat(timespec="seconds"))).lastrowid
+    changed(user, request, kind="players")
     return {"id": player_id}
 
 
 @app.post("/api/players/{player_id}")
-def rename_player(player_id: int, body: PlayerName, user=Depends(signed_in)):
+def rename_player(player_id: int, body: PlayerName, request: Request, user=Depends(signed_in)):
     name = check_name(body.name)
     with db.transaction() as conn:
         row = tables.player_row(conn, user["id"], player_id)
         conn.execute("UPDATE players SET name = ? WHERE id = ?", (name, player_id))
         if row["is_self"]:
             conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user["id"]))
+    changed(user, request, kind="players")
     return {"ok": True}
 
 
 @app.post("/api/players/{player_id}/delete")
-def delete_player(player_id: int, user=Depends(signed_in)):
+def delete_player(player_id: int, request: Request, user=Depends(signed_in)):
     with db.transaction() as conn:
         row = tables.player_row(conn, user["id"], player_id)
         if row["is_self"]:
@@ -359,6 +400,7 @@ def delete_player(player_id: int, user=Depends(signed_in)):
         conn.execute("DELETE FROM players WHERE id = ?", (player_id,))
     for throw_id in throw_ids:
         delete_crops(throw_id)
+    changed(user, request, kind="players")
     return {"ok": True}
 
 
@@ -395,11 +437,12 @@ class Change(BaseModel):
 
 
 @app.post("/api/players/{player_id}/change")
-def change(player_id: int, body: Change, user=Depends(signed_in)):
+def change(player_id: int, body: Change, request: Request, user=Depends(signed_in)):
     if body.action in ("rebuy", "reset"):
         check_cents(body.cents)
     message = tables.change(user["id"], player_id, body.action, buy_in_of(user), zone=body.zone, to=body.to,
                             hop=body.hop, cents=body.cents, on=body.on)
+    changed(user, request, player_id)
     return {"message": message, "table": tables.view(user["id"], player_id, buy_in_of(user))}
 
 
@@ -414,28 +457,34 @@ class Dice(BaseModel):
 
 
 @app.post("/api/players/{player_id}/roll")
-def roll(player_id: int, body: Dice, user=Depends(signed_in)):
+def roll(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
     meta = {"dice_set": body.dice_set.strip(), "position": body.position.strip(), "local_time": body.local_time}
+    camera_read, crops = camera.service.take_unclear(user["id"], player_id)     # dice the camera just couldn't read
     if body.mode == "tracker":
-        call = tables.log_throw(user["id"], player_id, body.die1, body.die2, body.back_wall, meta, voice_of(user))
+        call, throw_id = tables.log_throw(user["id"], player_id, body.die1, body.die2, body.back_wall, meta,
+                                          voice_of(user), camera_read=camera_read)
         message = f"Logged {body.die1}-{body.die2} on {meta['dice_set'] or 'Unnamed'}"
     else:
-        call = tables.roll(user["id"], player_id, body.die1, body.die2, body.back_wall, meta, voice_of(user),
-                           buy_in_of(user))
+        call, throw_id = tables.roll(user["id"], player_id, body.die1, body.die2, body.back_wall, meta,
+                                     voice_of(user), buy_in_of(user), camera_read=camera_read)
         message = ""
+    camera.save_crops(throw_id, crops)
+    changed(user, request, player_id)
     return {"message": message, "call": call, "voice": voice_of(user)}
 
 
 @app.post("/api/players/{player_id}/fix")
-def fix(player_id: int, body: Dice, user=Depends(signed_in)):
+def fix(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
     message, call = tables.fix_last(user["id"], player_id, body.die1, body.die2, voice_of(user))
+    changed(user, request, player_id)
     return {"message": message, "call": call, "voice": voice_of(user)}
 
 
 @app.post("/api/players/{player_id}/undo")
-def undo(player_id: int, user=Depends(signed_in)):
+def undo(player_id: int, request: Request, user=Depends(signed_in)):
     message, throw_id = tables.undo(user["id"], player_id)
     delete_crops(throw_id)
+    changed(user, request, player_id)
     return {"message": message}
 
 
@@ -444,6 +493,104 @@ def tracker(player_id: int, mode: str = "", dice_set: str = "", position: str = 
     conn = db.connect()
     tables.player_row(conn, user["id"], player_id)
     return stats.tracker_view(tables.player_throws(conn, player_id), mode, dice_set, position)
+
+
+# ---------------------------------------------------------------------- live updates
+@app.get("/api/events")
+def live(user=Depends(signed_in)):
+    queue = events.listen(user["id"])
+    return StreamingResponse(events.stream(user["id"], queue), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ---------------------------------------------------------------------- the camera
+def camera_user(user=Depends(signed_in)):
+    if not camera.allowed(user):
+        raise HTTPException(403, "This account can't use the camera.")
+    return user
+
+
+class CameraBinding(BaseModel):
+    player_id: int
+    mode: str = "table"
+    back_wall: bool = True
+    dice_set: str = Field("", max_length=50)
+    position: str = Field("", max_length=40)
+    tz_offset: int = 0
+
+
+def binding_of(body, user):
+    tables.player_row(db.connect(), user["id"], body.player_id)
+    return {"player_id": body.player_id, "mode": "tracker" if body.mode == "tracker" else "table",
+            "back_wall": body.back_wall, "dice_set": body.dice_set.strip(), "position": body.position.strip(),
+            "tz_offset": body.tz_offset, "voice": voice_of(user), "buy_in": buy_in_of(user)}
+
+
+@app.get("/api/camera")
+def camera_status(user=Depends(camera_user)):
+    return camera.service.status(user)
+
+
+@app.post("/api/camera/start")
+def camera_start(body: CameraBinding, request: Request, user=Depends(camera_user)):
+    try:
+        camera.service.start(user, client_of(request), binding_of(body, user))
+    except camera.CameraError as error:
+        raise HTTPException(409, str(error))
+    changed(user, request, kind="camera")
+    return camera.service.status(user)
+
+
+@app.post("/api/camera/update")
+def camera_update(body: CameraBinding, request: Request, user=Depends(camera_user)):
+    try:
+        camera.service.update(user, client_of(request), binding_of(body, user))
+    except camera.CameraError as error:
+        raise HTTPException(409, str(error))
+    return camera.service.status(user)
+
+
+@app.post("/api/camera/stop")
+def camera_stop(request: Request, user=Depends(camera_user)):
+    try:
+        camera.service.stop(user)
+    except camera.CameraError as error:
+        raise HTTPException(409, str(error))
+    return camera.service.status(user)
+
+
+@app.get("/api/camera/preview.jpg")
+def camera_preview(user=Depends(camera_user)):
+    jpeg = camera.service.preview()
+    if jpeg is None:
+        raise HTTPException(404, "No picture yet.")
+    return RawResponse(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/camera/settings")
+def camera_settings(user=Depends(camera_user)):
+    return camera.service.settings()
+
+
+class Tuning(BaseModel):
+    values: dict = {}
+    view: Optional[str] = None
+    save: bool = False
+
+
+@app.post("/api/camera/settings")
+def camera_tune(body: Tuning, user=Depends(camera_user)):
+    try:
+        return camera.service.tune(body.values, body.view, body.save)
+    except camera.CameraError as error:
+        raise HTTPException(400, str(error))
+
+
+@app.post("/api/camera/train")
+def camera_train(user=Depends(camera_user)):
+    from .train import train
+    made, report = train()
+    return {"ok": made, "report": report}
 
 
 # ---------------------------------------------------------------------- the stickman's voice

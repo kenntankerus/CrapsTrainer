@@ -148,6 +148,20 @@ table.stats tr:nth-child(even) td { background: var(--inset); }
 table.stats td:first-child, table.stats th:first-child { text-align: left; }
 #chart { width: 100%; max-width: 640px; height: auto; display: block; }
 
+/* the camera */
+.camera { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; }
+.camera-side { flex: 1; min-width: 240px; }
+.camera-row { margin-top: 0; }
+#camera-status { margin: 10px 0 0; }
+#camera-preview { display: block; width: min(400px, 100%); border-radius: 8px; background: var(--inset); aspect-ratio: 16 / 9; }
+#tune-preview { display: block; width: 100%; border-radius: 8px; background: var(--inset); aspect-ratio: 16 / 9; margin: 10px 0; }
+.sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) 4.5em; gap: 6px 10px; align-items: center; }
+.sliders input[type="range"] { width: 100%; min-height: 32px; padding: 0; accent-color: var(--gold); border: 0; background: transparent; }
+.sliders output { text-align: right; font-variant-numeric: tabular-nums; }
+.sliders .auto { grid-column: 2 / 4; }
+.report { white-space: pre-wrap; font-size: .8rem; background: var(--inset); padding: 10px; border-radius: 8px; }
+dialog.wide-dialog { width: min(760px, calc(100vw - 24px)); }
+
 /* dialogs */
 dialog { background: var(--card); color: var(--text); border: 1px solid var(--edge); border-radius: 14px; padding: 0;
   width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }

@@ -1,4 +1,6 @@
 # The web server (python -m web). The desktop apps don't need any of these.
 fastapi==0.162.0
 uvicorn==0.54.0
-edge-tts==7.3.1        # the stickman's voice; the browser's own voice is used without it
+edge-tts==7.3.1                     # the stickman's voice; the browser's own voice is used without it
+opencv-python-headless==5.0.0.93    # the camera (dice_vision.py); the rest of the app runs without these two
+numpy==2.5.4

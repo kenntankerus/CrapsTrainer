@@ -25,6 +25,7 @@ import base64
 import json
 import os
 import queue
+import sys
 import threading
 import time
 from collections import Counter, deque
@@ -45,6 +46,7 @@ SPLIT_ASPECT = 1.6              # a blob this much longer than wide is treated a
 WHITE_LEVEL = 180              # how bright a spot must be to count as a pip
 
 EXPOSURE = -2                   # camera brightness; None lets the camera choose. Each step darker doubles the frame rate
+EXPOSURE_LINUX = None           # the same on Linux, in tenths of a millisecond; None works it out from EXPOSURE
 GAIN = None                     # brightens a short exposure back up, with a little noise (Brio: 0-255); None keeps the camera's own
 FOCUS = None                    # lens focus with autofocus off (Brio: 0-255, lower = farther away); None keeps the camera's own
 FRAME_WIDTH, FRAME_HEIGHT = 1920, 1080
@@ -77,12 +79,13 @@ SETTINGS_FILE = os.path.join(HERE, "dice_settings.json")
 _SAVED_NAMES = {"hue_low": "HUE_LOW", "hue_high": "HUE_HIGH", "sat_low": "SAT_LOW",
                 "val_low": "VAL_LOW", "min_die_area": "MIN_DIE_AREA",
                 "white_level": "WHITE_LEVEL", "exposure": "EXPOSURE", "roi": "ROI", "focus": "FOCUS",
-                "two_dice_area": "TWO_DICE_AREA", "gain": "GAIN"}
+                "two_dice_area": "TWO_DICE_AREA", "gain": "GAIN", "exposure_linux": "EXPOSURE_LINUX"}
 
 
-def _load_saved_settings():
+def load_settings(path=None):
+    """Use the numbers in dice_settings.json (or the file given) in place of the ones above."""
     try:
-        with open(SETTINGS_FILE) as f:
+        with open(path or SETTINGS_FILE) as f:
             saved = json.load(f)
     except (OSError, ValueError):
         return
@@ -91,7 +94,12 @@ def _load_saved_settings():
             globals()[name] = saved[key]
 
 
-_load_saved_settings()
+def current_settings():
+    """The settings dice_settings.json can hold, as they are now."""
+    return {key: globals()[name] for key, name in _SAVED_NAMES.items()}
+
+
+load_settings()
 
 
 # ------------------------------------------------------------ pip layouts
@@ -302,11 +310,22 @@ def die_shaped(contour, two_dice_area):
     return area < two_dice_area and max(w, h) / max(min(w, h), 1) < SPLIT_ASPECT and solidity > 0.6
 
 
+def green_mask(area, scale=None):
+    """White where the picture is die-green, after cleaning up specks and joining see-through dice.
+    scale is the whole picture's width over REFERENCE_WIDTH (area may be just the carpet)."""
+    scale = area.shape[1] / REFERENCE_WIDTH if scale is None else scale
+    close_size = max(3, int(round(15 * scale)) | 1)     # odd number, shrinks for small pictures
+    hsv = cv2.cvtColor(area, cv2.COLOR_BGR2HSV)
+    green = cv2.inRange(hsv, np.array([HUE_LOW, SAT_LOW, VAL_LOW]), np.array([HUE_HIGH, 255, 255]))
+    # "Open" removes speckles, "close" joins the pieces of a see-through die into one blob
+    green = cv2.morphologyEx(green, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    return cv2.morphologyEx(green, cv2.MORPH_CLOSE, np.ones((close_size, close_size), np.uint8))
+
+
 def find_dice(frame):
     """Return one reading (see read_die) per die in the frame, left to right."""
     scale = frame.shape[1] / REFERENCE_WIDTH            # 1.0 for a 1920-wide picture
     min_area = MIN_DIE_AREA * scale * scale
-    close_size = max(3, int(round(15 * scale)) | 1)     # odd number, shrinks for small pictures
 
     # Only the carpet is searched; contours are shifted back so they match the full picture
     x0, y0 = 0, 0
@@ -314,11 +333,7 @@ def find_dice(frame):
     if ROI:
         x0, y0, x1, y1 = (int(v * scale) for v in ROI)
         area = frame[y0:y1, x0:x1]
-    hsv = cv2.cvtColor(area, cv2.COLOR_BGR2HSV)
-    green = cv2.inRange(hsv, np.array([HUE_LOW, SAT_LOW, VAL_LOW]), np.array([HUE_HIGH, 255, 255]))
-    # "Open" removes speckles, "close" joins the pieces of a see-through die into one blob
-    green = cv2.morphologyEx(green, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    green = cv2.morphologyEx(green, cv2.MORPH_CLOSE, np.ones((close_size, close_size), np.uint8))
+    green = green_mask(area, scale)
 
     contours, _ = cv2.findContours(green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     dice = []
@@ -348,6 +363,50 @@ def encode_png(image):
 
 
 # ----------------------------------------------------------- the live camera
+WINDOWS = sys.platform.startswith("win")
+LINUX = sys.platform.startswith("linux")
+
+
+def linux_exposure():
+    """EXPOSURE_LINUX, or EXPOSURE turned into Linux's units. On Windows EXPOSURE is a power of two in
+    seconds (-3 = 1/8 s); Linux cameras take tenths of a millisecond (1/8 s = 1250)."""
+    if EXPOSURE_LINUX is not None:
+        return EXPOSURE_LINUX
+    if EXPOSURE is None:
+        return None
+    return max(1, round(2 ** EXPOSURE * 10000)) if EXPOSURE < 0 else EXPOSURE
+
+
+def apply_focus(cap):
+    if FOCUS is not None:
+        cap.set(cv2.CAP_PROP_FOCUS, FOCUS)
+
+
+def apply_exposure(cap):
+    exposure = linux_exposure() if LINUX else EXPOSURE
+    if exposure is not None:
+        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1 if LINUX else 0.25)     # manual: 0.25 on Windows cameras, 1 on Linux
+        cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
+        if GAIN is not None:
+            cap.set(cv2.CAP_PROP_GAIN, GAIN)
+
+
+def open_camera(source):
+    """Open a camera (a number, or a device path like /dev/video0 on Linux) with the settings above. None if it won't open."""
+    backend = cv2.CAP_DSHOW if WINDOWS else cv2.CAP_V4L2 if LINUX else cv2.CAP_ANY
+    cap = cv2.VideoCapture(source, backend)
+    if not cap.isOpened():
+        return None
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+    cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+    apply_focus(cap)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)        # always hand us the newest picture, not a queued one
+    apply_exposure(cap)
+    return cap
+
+
 class DiceCamera:
     """
     Watches the camera in a background thread.
@@ -361,11 +420,19 @@ class DiceCamera:
       camera.resolution   (width, height) the camera is really giving us
       camera.fps      frames per second the camera is really giving us
       camera.get_preview_png()   the latest small picture, for showing on screen
+      camera.get_preview_jpeg()  the same picture as JPEG bytes, for a web page
+      camera.view     "normal", or "mask" to show the green the dice are found by (for tuning)
+      camera.reapply()  send changed FOCUS / EXPOSURE / GAIN to the camera
     "crops" are the straightened top faces, left die first, as PNG bytes.
+    capture can be anything with read() and release() in place of a real camera (for tests).
     """
 
-    def __init__(self, camera_index=0):
+    def __init__(self, camera_index=0, capture=None):
         self.camera_index = camera_index
+        self.capture = capture
+        self.view = "normal"
+        self._reapply = False
+        self._preview_small = None
         self.events = queue.Queue()
         self.status = "starting"
         self.error = ""
@@ -385,29 +452,24 @@ class DiceCamera:
     # ---- starting and stopping
     def start(self):
         """Open the camera and start watching. Returns False (with .error set) on failure."""
-        cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            self.error = (f"Could not open camera {self.camera_index}. "
-                          "Close other apps using it, or start the tracker with a different "
-                          "camera number, like:  python dice_tracker_v2.py 1")
+        cap = self.capture or open_camera(self.camera_index)
+        if cap is None:
+            if WINDOWS:
+                self.error = (f"Could not open camera {self.camera_index}. "
+                              "Close other apps using it, or start the tracker with a different "
+                              "camera number, like:  python dice_tracker_v2.py 1")
+            else:
+                self.error = (f"Could not open camera {self.camera_index}. Check it's plugged in "
+                              "(ls /dev/video*) and nothing else is using it.")
             return False
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-        if FOCUS is not None:
-            cap.set(cv2.CAP_PROP_FOCUS, FOCUS)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)        # always hand us the newest picture, not a queued one
-        if EXPOSURE is not None:
-            cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)     # 0.25 = manual on Windows cameras
-            cap.set(cv2.CAP_PROP_EXPOSURE, EXPOSURE)
-            if GAIN is not None:
-                cap.set(cv2.CAP_PROP_GAIN, GAIN)
         self._cap = cap
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         return True
+
+    def reapply(self):
+        self._reapply = True
 
     def stop(self):
         self._stop.set()
@@ -432,6 +494,10 @@ class DiceCamera:
         started = fps_start
 
         while not self._stop.is_set():
+            if self._reapply and self.capture is None:
+                self._reapply = False
+                apply_focus(cap)
+                apply_exposure(cap)
             ok, frame = cap.read()
             if not ok:
                 self.error = "Lost the camera feed."
@@ -533,7 +599,8 @@ class DiceCamera:
     # ---- the little live picture
     def _make_preview(self, frame, dice):
         scale = PREVIEW_WIDTH / frame.shape[1]
-        small = cv2.resize(frame, (PREVIEW_WIDTH, int(frame.shape[0] * scale)), interpolation=cv2.INTER_AREA)
+        shown = cv2.cvtColor(green_mask(frame), cv2.COLOR_GRAY2BGR) if self.view == "mask" else frame
+        small = cv2.resize(shown, (PREVIEW_WIDTH, int(frame.shape[0] * scale)), interpolation=cv2.INTER_AREA)
         for die in dice:
             x, y, w, h = cv2.boundingRect(die["contour"])
             x, y, w, h = int(x * scale), int(y * scale), int(w * scale), int(h * scale)
@@ -547,8 +614,18 @@ class DiceCamera:
             data = base64.b64encode(png.tobytes()).decode("ascii")
             with self._lock:
                 self._preview = data
+                self._preview_small = small
 
     def get_preview_png(self):
         """Latest preview as base64 PNG text (what Tkinter's PhotoImage wants), or None."""
         with self._lock:
             return self._preview
+
+    def get_preview_jpeg(self, quality=80):
+        """Latest preview as JPEG bytes, or None."""
+        with self._lock:
+            small = self._preview_small
+        if small is None:
+            return None
+        ok, jpeg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return jpeg.tobytes() if ok else None

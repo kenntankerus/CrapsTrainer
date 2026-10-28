@@ -67,6 +67,11 @@ TRUST_PROXY = _flag("TRUST_PROXY")
 # The stickman's voice: lines are made with edge-tts (needs internet) and kept in VOICE_CACHE.
 TTS = _flag("TTS", True)
 
+# The webcam at the table: a number (0 is the first camera), a device such as /dev/video0, or "demo" for a
+# pretend camera that throws drawn dice. Empty means no camera. Only the accounts listed may use it.
+CAMERA_SOURCE = _get("CAMERA")
+CAMERA_USERS = {e.strip().lower() for e in _get("CAMERA_USERS").split(",") if e.strip()}
+
 LINK_MINUTES = 15                  # a sign-in link works once, for this long
 SESSION_DAYS = 90                  # how long a device stays signed in without being used
 LINKS_PER_EMAIL = 3                # sign-in emails per address per LINK_MINUTES

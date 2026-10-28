@@ -6,7 +6,7 @@ inside one transaction, so a phone and a laptop on the same table can't trip ove
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from craps_engine import (BONUS_PAYS, HOP_COMBOS, POINTS, SPOTS, BetError, CrapsTable, hop_spot, money,
                           run_summary, signed, spot_name)
@@ -169,7 +169,14 @@ def call_pieces(pieces, voice):
 def new_throw(conn, player_id, die1, die2, back_wall, meta, source="manual", camera_read=""):
     """Build a throw from the request's dice and the thrower's settings (not yet saved)."""
     local = meta.get("local_time") or ""
-    stamp = local if LOCAL_TIME.match(local) else datetime.now().isoformat(timespec="seconds")
+    if LOCAL_TIME.match(local):
+        stamp = local
+    elif isinstance(meta.get("tz_offset"), int) and abs(meta["tz_offset"]) <= 14 * 60:
+        # a camera throw: the thrower's clock, from the offset their page gave when the camera started
+        now = datetime.now(timezone.utc) + timedelta(minutes=meta["tz_offset"])
+        stamp = now.replace(tzinfo=None).isoformat(timespec="seconds")
+    else:
+        stamp = datetime.now().isoformat(timespec="seconds")
     return {"timestamp": stamp, "session": stamp[:10], "dice_set": meta.get("dice_set") or "Unnamed",
             "position": meta.get("position") or UNSPECIFIED, "die1": die1, "die2": die2, "total": die1 + die2,
             "back_wall": bool(back_wall), "source": source, "camera_read": camera_read,
@@ -194,26 +201,29 @@ def settle(conn, player_id, table, throw, voice):
     return note, (result["net"] if result else 0), panel, pieces
 
 
-def roll(user_id, player_id, die1, die2, back_wall, meta, voice=DEFAULT_VOICE, buy_in=DEFAULT_BUY_IN):
+def roll(user_id, player_id, die1, die2, back_wall, meta, voice=DEFAULT_VOICE, buy_in=DEFAULT_BUY_IN,
+         source="manual", camera_read=""):
+    """Settle a roll on the table. Returns the stickman's words and the throw's id."""
     with db.transaction() as conn:
         row = player_row(conn, user_id, player_id)
         table = load_table(row, buy_in)
         before = table.snapshot()
-        throw = new_throw(conn, player_id, die1, die2, back_wall, meta)
+        throw = new_throw(conn, player_id, die1, die2, back_wall, meta, source, camera_read)
         note, net, panel, pieces = settle(conn, player_id, table, throw, voice)
         insert_throw(conn, player_id, throw, before, net, note)
         save_table(conn, player_id, table, panel)
-    return call_pieces(pieces, voice)
+    return call_pieces(pieces, voice), throw["throw_id"]
 
 
-def log_throw(user_id, player_id, die1, die2, back_wall, meta, voice=DEFAULT_VOICE):
-    """A tracker throw: logged with no bets settled. The stickman calls it from the throw log, as the tracker does."""
+def log_throw(user_id, player_id, die1, die2, back_wall, meta, voice=DEFAULT_VOICE, source="manual", camera_read=""):
+    """A tracker throw: logged with no bets settled. The stickman calls it from the throw log, as the tracker does.
+    Returns the stickman's words and the throw's id."""
     with db.transaction() as conn:
         player_row(conn, user_id, player_id)
-        throw = new_throw(conn, player_id, die1, die2, back_wall, meta)
+        throw = new_throw(conn, player_id, die1, die2, back_wall, meta, source, camera_read)
         insert_throw(conn, player_id, throw)
         throws = player_throws(conn, player_id)
-    return call_pieces(croupier_call(throws, voice) if voice in VOICES else [], voice)
+    return call_pieces(croupier_call(throws, voice) if voice in VOICES else [], voice), throw["throw_id"]
 
 
 def last_throw(conn, player_id):

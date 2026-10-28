@@ -2,32 +2,14 @@
 Tests for the web server:   pip install -r requirements-web.txt pytest   then   python -m pytest tests
 """
 
-import os
 import re
-import sys
-import tempfile
 
-DATA = tempfile.mkdtemp(prefix="craps-test-")
-os.environ["CRAPS_DATA_DIR"] = DATA
-os.environ["CRAPS_TTS"] = "0"
-os.environ["CRAPS_SMTP_HOST"] = ""
-os.environ["CRAPS_TURNSTILE_SECRET"] = ""
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from fastapi.testclient import TestClient
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+from conftest import SENT
+from web import app as web_app, config, db
 
-from web import app as web_app, config, db, mail  # noqa: E402
-
-SENT = []
 HEADERS = {"X-Requested-With": "craps"}
-
-
-@pytest.fixture(autouse=True)
-def capture_mail(monkeypatch):
-    SENT.clear()
-    monkeypatch.setattr(config, "LINKS_PER_IP", 1000)       # every test signs in from the same address
-    monkeypatch.setattr(mail, "send", lambda to, subject, text, html=None: SENT.append((to, subject, text)))
 
 
 def client():
@@ -73,7 +55,8 @@ def test_sign_in_link_works_once():
         assert c.post("/api/auth/verify", json={"token": token}).status_code == 400
 
 
-def test_rate_limit_per_email():
+def test_rate_limit_per_email(monkeypatch):
+    monkeypatch.setattr(config, "LINKS_PER_EMAIL", 3)
     with client() as c:
         for _ in range(config.LINKS_PER_EMAIL):
             assert c.post("/api/auth/request", json={"email": "busy@example.com"}).status_code == 200

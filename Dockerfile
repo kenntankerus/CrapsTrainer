@@ -8,11 +8,12 @@ WORKDIR /app
 COPY requirements-web.txt .
 RUN pip install --no-cache-dir -r requirements-web.txt
 
-# the game rules, stats and stickman lines are shared with the desktop apps
-COPY craps_engine.py dice_stats.py stickman.py ./
+# the game rules, stats, stickman lines and dice reader are shared with the desktop apps
+COPY craps_engine.py dice_stats.py stickman.py dice_vision.py train_dice_model.py dice_settings.json ./
 COPY web ./web
 
-RUN useradd --create-home --uid 1000 craps && mkdir -p /app/data && chown craps /app/data
+# the camera is /dev/video0, which belongs to the video group
+RUN useradd --create-home --uid 1000 --groups video craps && mkdir -p /app/data && chown craps /app/data
 USER craps
 VOLUME /app/data
 EXPOSE 8000

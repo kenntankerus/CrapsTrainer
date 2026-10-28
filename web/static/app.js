@@ -10,6 +10,8 @@ const S = {
   dice: [], flash: {}, hover: null, moving: null, layout: "wide", busy: false,
 };
 let flashTimer = null, saveTimer = null, pendingSettings = {};
+// this page's name, so it can tell its own changes from another device's when the news comes back
+const CLIENT = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)).slice(0, 36);
 
 // ---------------------------------------------------------------- talking to the server
 class ApiError extends Error {
@@ -17,7 +19,7 @@ class ApiError extends Error {
 }
 
 async function api(path, body) {
-  const options = { headers: { "X-Requested-With": "craps" }, credentials: "same-origin" };
+  const options = { headers: { "X-Requested-With": "craps", "X-Client-Id": CLIENT }, credentials: "same-origin" };
   if (body !== undefined) {
     options.method = "POST";
     options.headers["Content-Type"] = "application/json";
@@ -198,6 +200,9 @@ async function boot(message = "") {
   fillControls();
   setTab(S.settings.tab === "tracker" ? "tracker" : "table", false);
   status(message);
+  S.camera = S.me.camera;
+  drawCamera();
+  connectLive();
   await refresh();
 }
 
@@ -322,6 +327,7 @@ function setupControls() {
     S.player = Number($("player").value);
     S.flash = {};
     saveSettings({ player_id: S.player });
+    syncCamera();
     const name = $("player").selectedOptions[0].textContent;
     status(`${name} is throwing.`);
     await refresh();
@@ -329,15 +335,17 @@ function setupControls() {
   $("dice-set").addEventListener("change", async () => {
     await pickOther($("dice-set"), "New dice set", "dice_set");
     showSetup();
+    syncCamera();
     if (S.tab === "tracker") refresh();
   });
-  $("setup").addEventListener("change", () => { saveSettings({ setup: $("setup").value }); if (S.tab === "tracker") refresh(); });
+  $("setup").addEventListener("change", () => { saveSettings({ setup: $("setup").value }); syncCamera(); if (S.tab === "tracker") refresh(); });
   $("position").addEventListener("change", async () => {
     await pickOther($("position"), "New position", "position");
+    syncCamera();
     if (S.tab === "tracker") refresh();
   });
-  $("voice").addEventListener("change", () => saveSettings({ voice: $("voice").value }));
-  $("back-wall").addEventListener("change", () => saveSettings({ back_wall: $("back-wall").checked }));
+  $("voice").addEventListener("change", () => { saveSettings({ voice: $("voice").value }); setTimeout(syncCamera, 500); });
+  $("back-wall").addEventListener("change", () => { saveSettings({ back_wall: $("back-wall").checked }); syncCamera(); });
   $("sounds").addEventListener("change", () => saveSettings({ sounds: $("sounds").checked }));
   $("compare").addEventListener("change", () => { saveSettings({ compare: $("compare").value }); refresh(); });
   $("hop").addEventListener("change", () => { saveSettings({ hop: $("hop").value }); drawTable(); });
@@ -358,7 +366,7 @@ function setupControls() {
     saveSettings({ buy_in: cents });
   });
   for (const button of $("tabs").querySelectorAll("button")) {
-    button.addEventListener("click", () => { setTab(button.dataset.tab); refresh(); });
+    button.addEventListener("click", () => { setTab(button.dataset.tab); syncCamera(); refresh(); });
   }
 }
 
@@ -980,6 +988,222 @@ async function addGuest() {
   }
 }
 
+// ---------------------------------------------------------------- live updates from the server
+let live = null;
+function connectLive() {
+  if (live || !window.EventSource) return;
+  live = new EventSource("/api/events");
+  let first = true;
+  live.onopen = () => {
+    if (!first) refresh();                 // back after a dropped connection: catch up on anything missed
+    first = false;
+  };
+  live.onmessage = (event) => {
+    let m;
+    try { m = JSON.parse(event.data); } catch { return; }
+    const mine = m.client === CLIENT;
+    if (m.type === "changed") {
+      if (!mine && (m.player_id == null || m.player_id === S.player)) refresh();
+    } else if (m.type === "players") {
+      if (!mine) reloadPlayers().then(refresh).catch(() => {});
+    } else if (m.type === "camera") {
+      loadCamera();
+    } else if (m.type === "camera_throw") {
+      if (m.player_id === S.player) refresh(true);
+      if (mine) {
+        if ($("sounds").checked) sound.beep(true);
+        if (m.call?.length && $("voice").value !== "Off") sound.say(m.call, voiceSlug());
+        status(m.message);
+      }
+    } else if (m.type === "camera_unclear") {
+      if (mine) {
+        if ($("sounds").checked) sound.beep(false);
+        status(m.message, true);
+      }
+    } else if (m.type === "camera_error") {
+      status(m.message, true);
+      loadCamera();
+    }
+  };
+}
+
+// ---------------------------------------------------------------- the camera at the table
+function cameraMine() {
+  return !!(S.camera?.running && S.camera.mine && S.camera.client === CLIENT);
+}
+
+function cameraBinding() {
+  return { player_id: S.player, mode: S.tab === "tracker" ? "tracker" : "table", back_wall: $("back-wall").checked,
+    dice_set: currentSet(), position: currentPosition(), tz_offset: -new Date().getTimezoneOffset() };
+}
+
+async function loadCamera() {
+  if (!S.camera?.allowed) return;
+  try { S.camera = await api("/api/camera"); } catch { return; }
+  drawCamera();
+}
+
+function drawCamera() {
+  const c = S.camera;
+  $("camera-card").hidden = !c?.allowed;
+  if (!c?.allowed) return;
+  const button = $("camera-button");
+  const elsewhere = c.running && !cameraMine();
+  button.textContent = !c.running ? "Start camera" : elsewhere ? (c.mine ? "Use the camera here" : "Camera busy") : "Stop camera";
+  button.disabled = c.running && !c.mine;
+  let text = "Camera off";
+  if (c.running) {
+    const size = c.resolution ? `${c.resolution[0]}x${c.resolution[1]}${c.fps ? ` @ ${c.fps} fps` : ""}: ` : "";
+    text = elsewhere ? (c.mine ? "Running from your other device." : `${c.owner} is using it.`) : `Camera ${size}${c.status || "starting"}`;
+  } else if (c.error) {
+    text = c.error;
+  }
+  $("camera-status").textContent = text;
+  $("camera-hint").textContent = cameraMine()
+    ? `Throws go to ${$("player").selectedOptions[0]?.textContent || "this player"} on the ${S.tab === "tracker" ? "tracker (no bets)" : "table"}. ` +
+      "Wrong read? Tap the right dice (left die first), then Fix last." + (c.model ? `  (${c.model})` : "")
+    : "";
+  $("camera-tune").disabled = !c.running;
+  $("camera-preview").hidden = !c.running || !$("camera-show").checked;
+  previewLoop();
+}
+
+async function toggleCamera() {
+  sound.unlock();
+  try {
+    if (cameraMine()) S.camera = await api("/api/camera/stop", {});
+    else S.camera = await api("/api/camera/start", cameraBinding());
+    status(S.camera.running ? "Camera on. Throw when your bets are down." : "Camera off.");
+  } catch (error) {
+    status(error.message, true);
+    await loadCamera();
+  }
+  drawCamera();
+}
+
+async function syncCamera() {
+  if (!cameraMine()) return;
+  try { S.camera = await api("/api/camera/update", cameraBinding()); } catch (error) { status(error.message, true); }
+  drawCamera();
+}
+
+// The picture: the next one is asked for once the last has arrived, a few times a second
+let previewBusy = false, statusTick = 0;
+function previewLoop() {
+  if (previewBusy) return;
+  const targets = [];
+  if (!$("camera-preview").hidden) targets.push($("camera-preview"));
+  if ($("tune-dialog").open) targets.push($("tune-preview"));
+  if (!S.camera?.running || !targets.length || document.hidden) return;
+  previewBusy = true;
+  const img = new Image();
+  img.onload = img.onerror = () => {
+    if (img.naturalWidth) for (const t of targets) t.src = img.src;
+    previewBusy = false;
+    if (++statusTick % 8 === 0) loadCamera(); else setTimeout(previewLoop, 250);
+  };
+  img.src = `/api/camera/preview.jpg?t=${Date.now()}`;
+}
+
+// The tuning sliders: dice_camera_test.py's, for a camera on a computer with no screen of its own
+const SLIDERS = [
+  ["hue_low", "Hue low", 0, 179], ["hue_high", "Hue high", 0, 179], ["sat_low", "Saturation low", 0, 255],
+  ["val_low", "Brightness low", 0, 255], ["white_level", "White (pips)", 0, 255],
+  ["min_die_area", "Smallest die", 50, 20000], ["two_dice_area", "Two dice touching", 500, 40000],
+  ["exposure", "Exposure", -13, 0], ["focus", "Focus", 0, 255, true], ["gain", "Gain", 0, 255, true],
+];
+let tuneStart = null, tuneTimer = null;
+
+async function openTuning() {
+  let values;
+  try { values = await api("/api/camera/settings"); } catch (error) { status(error.message, true); return; }
+  tuneStart = values;
+  const box = clear($("sliders"));
+  for (let [key, label, low, high, optional] of SLIDERS) {
+    if (key === "exposure" && values.linux) {
+      key = "exposure_linux"; label = "Exposure (0.1 ms)"; low = 1; high = 2500;
+    }
+    const value = key === "exposure_linux" ? values.effective_exposure : values[key];
+    item(box, "label", label).htmlFor = `tune-${key}`;
+    const range = item(box, "input");
+    Object.assign(range, { type: "range", id: `tune-${key}`, min: low, max: high, step: 1, value: value ?? low });
+    range.dataset.key = key;
+    const out = item(box, "output", value ?? "auto");
+    range.addEventListener("input", () => {
+      out.textContent = range.value;
+      if (optional) $(`auto-${key}`).checked = false;
+      sendTuning();
+    });
+    if (optional) {
+      item(box, "span");
+      const auto = item(item(box, "span", undefined, "auto"), "label", undefined, "toggle");
+      const check = item(auto, "input");
+      Object.assign(check, { type: "checkbox", id: `auto-${key}`, checked: value == null });
+      auto.append(" Let the camera choose");
+      check.addEventListener("change", () => { out.textContent = check.checked ? "auto" : range.value; sendTuning(); });
+    }
+  }
+  $("tune-status").textContent = "";
+  $("tune-dialog").showModal();
+  previewLoop();
+}
+
+function tuningValues() {
+  const values = {};
+  for (const range of $("sliders").querySelectorAll("input[type=range]")) {
+    const auto = $(`auto-${range.dataset.key}`);
+    values[range.dataset.key] = auto?.checked ? null : Number(range.value);
+  }
+  return values;
+}
+
+function sendTuning(save = false) {
+  clearTimeout(tuneTimer);
+  const view = document.querySelector("input[name=tune-view]:checked").value;
+  const go = () => api("/api/camera/settings", { values: tuningValues(), view, save })
+    .then(() => { if (save) status("Camera settings saved."); })
+    .catch((error) => { $("tune-status").textContent = error.message; });
+  if (save) return go();
+  tuneTimer = setTimeout(go, 150);
+}
+
+function setupCamera() {
+  $("camera-button").addEventListener("click", toggleCamera);
+  $("camera-show").addEventListener("change", drawCamera);
+  $("camera-tune").addEventListener("click", openTuning);
+  $("tune-train").addEventListener("click", async () => {
+    const button = $("tune-train"), report = $("train-report");
+    button.disabled = true;
+    report.hidden = false;
+    report.textContent = "Learning from your saved dice pictures…";
+    try {
+      const result = await api("/api/camera/train", {});
+      report.textContent = result.report;
+      loadCamera();
+    } catch (error) {
+      report.textContent = error.message;
+    }
+    button.disabled = false;
+  });
+  for (const radio of document.querySelectorAll("input[name=tune-view]")) radio.addEventListener("change", () => sendTuning());
+  $("tune-dialog").addEventListener("close", async () => {
+    const choice = $("tune-dialog").returnValue;
+    if (choice === "save") {
+      await sendTuning(true);
+    } else if (tuneStart) {                // put back what it was
+      const values = {};
+      for (const range of $("sliders").querySelectorAll("input[type=range]")) {
+        const key = range.dataset.key;
+        values[key] = key === "exposure_linux" ? tuneStart.exposure_linux : tuneStart[key];
+      }
+      await api("/api/camera/settings", { values, view: "normal" }).catch(() => {});
+    }
+    await api("/api/camera/settings", { values: {}, view: "normal" }).catch(() => {});
+    document.querySelector("input[name=tune-view][value=normal]").checked = true;
+  });
+  document.addEventListener("visibilitychange", previewLoop);
+}
+
 // ---------------------------------------------------------------- go
 async function start() {
   try {
@@ -996,6 +1220,7 @@ async function start() {
   setupLayout();
   setupMenu();
   guardSheet();
+  setupCamera();
   document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("main").hidden) refresh(); });
   if (location.pathname === "/auth/verify") return verifyLink();
   await boot();

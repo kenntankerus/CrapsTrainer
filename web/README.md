@@ -17,9 +17,12 @@ What's in this first version:
   with the Small / Tall / All runs and the totals chart.
 * **The stickman**: the same lines and voices. Lines are made with edge-tts on the server (or played
   from `voice_packs/`), and the browser's own voice reads them if the server can't.
+* **The camera**: the webcam plugged into the server reads each throw, as in the desktop apps, and
+  rolls it (or logs it, on the Tracker tab) for whoever pressed *Start camera*. Every page that
+  account has open updates as the dice land. Tuning sliders, a live picture and retraining the dice
+  reader are all on the page, so the server needs no screen. See [The camera](#the-camera).
+* **Live updates**: a roll on your phone shows up on the laptop straight away, and the other way round.
 * Download all your throws as `dice_throws.csv`, or delete your account, from the menu.
-
-The camera isn't in the web version yet. That's the next stage.
 
 ## Try it on your own computer
 
@@ -155,9 +158,54 @@ Rent any small Linux server, install Docker, copy the `CrapsTrainer` folder (wit
 `.env`) across, run `docker compose up -d`, and stop the laptop's copy. The tunnel token moves with
 `.env`, so the address doesn't change.
 
+## The camera
+
+Only the accounts in `CRAPS_CAMERA_USERS` can start the camera or see its picture: with open
+sign-up, nobody else should be able to look through it.
+
+**Try it without a webcam** (on your own computer, after `pip install -r requirements-web.txt`):
+
+```
+CRAPS_CAMERA=demo CRAPS_CAMERA_USERS=you@example.com python -m web
+```
+
+A pretend camera throws drawn dice every few seconds, read by the same `dice_vision.py` code.
+
+**On the laptop**, add to `.env` and restart with `docker compose up -d`:
+
+```
+CRAPS_CAMERA=0
+CRAPS_CAMERA_USERS=kenntankerus@pm.me
+COMPOSE_FILE=docker-compose.yml:docker-compose.camera.yml
+```
+
+The last line hands the webcam to the container. If the laptop's own camera is also there, the
+Brio may not be `/dev/video0`: `sudo apt install v4l-utils` and `v4l2-ctl --list-devices` shows
+which is which (each camera usually lists two devices; the first is the picture). Put the right one in
+`docker-compose.camera.yml` and set `CRAPS_CAMERA` to its number.
+
+Then press **Start camera** on the page. Throws go to the player picked at the top, on the tab you're
+on: the Table settles bets, the Tracker only logs. Switching player or tab moves the camera with you.
+A wrong read is fixed the usual way: tap the right dice (left die first, as in the picture) and
+*Fix last*. When the camera can't read a throw, tap it in and the pictures are kept with it, as in
+the desktop tracker.
+
+**Tuning on Linux.** The settings from `dice_settings.json` come along, but Linux drives webcams
+differently, so check them the first time:
+
+1. Press **Tune**. Choose **Mask**: each die should be one solid white square and the carpet black.
+   Raise *Saturation low* or *Brightness low* if the carpet speckles; lower them if the dice break up.
+2. **Exposure** is in tenths of a millisecond on Linux. Your Windows setting of -3 (1/8 s) comes across
+   as 1250. Lower it for a faster, darker picture, and add *Gain* to brighten it back up.
+3. *White (pips)* is how bright a spot has to be to count as a pip.
+4. **Save** keeps the settings in `data/dice_settings.json`. *Cancel* puts back what was there.
+
+**Retrain the dice reader** (in the Tune window, or `docker compose exec web python -m web.train`)
+learns from every camera throw's saved pictures, including the 560 brought over from the desktop.
+
 ## Settings
 
-All in `.env`; `.env.example` lists them. The ones not covered above: `CRAPS_DATA_DIR` (where the data
+All in `.env`; `.env.example` lists them. The ones not covered above: `CRAPS_CAMERA` and `CRAPS_CAMERA_USERS` (see The camera), `CRAPS_DATA_DIR` (where the data
 lives), `CRAPS_TTS=0` (skip edge-tts and let the browser speak), `CRAPS_VOICE_PACKS` and
 `CRAPS_SITE_NAME`.
 
@@ -170,6 +218,10 @@ lives), `CRAPS_TTS=0` (skip edge-tts and let the browser speak), `CRAPS_VOICE_PA
 | `web/tables.py` | the craps table on the server: what `craps_game.py` does with clicks, done per request |
 | `web/stats.py` | the tracker's numbers, as `dice_tracker_v2.py` shows them |
 | `web/voice.py` | stickman clips: recorded packs, else made with edge-tts and kept |
+| `web/camera.py` | the webcam: runs `dice_vision.py`, rolls each throw for whoever started it, tuning |
+| `web/camera_demo.py` | the pretend camera, for trying it out and for the tests |
+| `web/events.py` | live updates to open pages (server-sent events) |
+| `web/train.py` | retraining the dice reader from the saved pictures |
 | `web/db.py` | the SQLite database |
 | `web/static/` | the page: `app.js`, the layout drawing in `layout.js`, sounds in `sound.js` |
 | `web/import_data.py`, `web/backup.py` | bringing in the desktop data, and safe copies of the database |

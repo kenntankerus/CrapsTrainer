@@ -103,6 +103,19 @@
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </section>
 
+    <section class="card camera" id="camera-card" aria-label="Camera" hidden>
+      <img id="camera-preview" alt="What the camera sees" hidden>
+      <div class="camera-side">
+        <div class="row wrap camera-row">
+          <button type="button" class="gold" id="camera-button">Start camera</button>
+          <label class="toggle"><input type="checkbox" id="camera-show" checked> Show picture</label>
+          <button type="button" id="camera-tune">Tune</button>
+        </div>
+        <p id="camera-status" class="muted">Camera off</p>
+        <p class="small muted" id="camera-hint"></p>
+      </div>
+    </section>
+
     <!-- the craps table -->
     <section id="tab-table">
       <div class="table-grid">
@@ -235,6 +248,30 @@
       <div class="dialog-actions">
         <button value="cancel" formnovalidate>Cancel</button>
         <button value="ok" class="gold" id="ask-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="tune-dialog" class="wide-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Tune the camera</h2>
+      <p class="small muted">Changes show in the picture straight away. <b>Mask</b> shows the green the dice are found by:
+        each die should be one solid white square and nothing else white. Save keeps the settings for next time.</p>
+      <div class="row wrap">
+        <label class="toggle"><input type="radio" name="tune-view" value="normal" checked> Picture</label>
+        <label class="toggle"><input type="radio" name="tune-view" value="mask"> Mask</label>
+      </div>
+      <img id="tune-preview" alt="What the camera sees">
+      <div class="sliders" id="sliders"></div>
+      <p class="status" id="tune-status" role="status"></p>
+      <h3>The dice reader</h3>
+      <p class="small muted">When a die's pips don't form a clean layout, a model learned from your saved dice pictures
+        gets a say. Retrain it after you've thrown (and fixed) a lot more with the camera.</p>
+      <button type="button" id="tune-train">Retrain the dice reader</button>
+      <pre class="report" id="train-report" hidden></pre>
+      <div class="dialog-actions">
+        <button value="cancel" id="tune-cancel">Cancel</button>
+        <button value="save" class="gold" id="tune-save">Save</button>
       </div>
     </form>
   </dialog>
