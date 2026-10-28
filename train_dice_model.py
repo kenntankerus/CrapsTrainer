@@ -49,22 +49,27 @@ def labelled_pairs(row):
     return die1, die2
 
 
-def load_examples():
+def load_examples(data_file=DATA_FILE, crop_dir=CROP_DIR):
     """Return a list of (throw_id, face picture, value)."""
-    if not os.path.exists(DATA_FILE):
-        sys.exit(f"No {os.path.basename(DATA_FILE)} next to this script yet. Log some camera throws first.")
+    if not os.path.exists(data_file):
+        sys.exit(f"No {os.path.basename(data_file)} next to this script yet. Log some camera throws first.")
+    with open(data_file, newline="") as f:
+        return examples_from(csv.DictReader(f), crop_dir)
+
+
+def examples_from(rows, crop_dir=CROP_DIR):
+    """(throw_id, face picture, value) for each saved die picture of these throws (rows like dice_throws.csv's)."""
     examples = []
-    with open(DATA_FILE, newline="") as f:
-        for row in csv.DictReader(f):
-            throw_id = row.get("throw_id") or ""
-            if not throw_id:
-                continue
-            values = labelled_pairs(row)
-            for side, value in zip(("left", "right"), values):
-                path = os.path.join(CROP_DIR, f"{throw_id}_{side}.png")
-                face = cv2.imread(path)
-                if face is not None:
-                    examples.append((throw_id, face, value))
+    for row in rows:
+        throw_id = row.get("throw_id") or ""
+        if not throw_id:
+            continue
+        values = labelled_pairs(row)
+        for side, value in zip(("left", "right"), values):
+            path = os.path.join(crop_dir, f"{throw_id}_{side}.png")
+            face = cv2.imread(path) if os.path.exists(path) else None
+            if face is not None:
+                examples.append((throw_id, face, value))
     return examples
 
 
@@ -79,7 +84,11 @@ def build(examples):
 
 
 def main():
-    examples = load_examples()
+    train_and_save(load_examples(), dv.MODEL_FILE)
+
+
+def train_and_save(examples, model_file, print=print, fix_key="F2", after="Restart the tracker to use it."):
+    """Test a model on held-back throws, then save one built from every picture. False if there aren't enough."""
     counts = Counter(value for _, _, value in examples)
     print(f"Found {len(examples)} saved dice pictures.")
     print("  per face: " + ", ".join(f"{face}: {counts.get(face, 0)}" for face in range(1, 7)))
@@ -88,8 +97,8 @@ def main():
     if short:
         print(f"\nNot enough yet: each face needs at least {MIN_PER_FACE} pictures "
               f"(short on: {', '.join(map(str, short))}).")
-        print("Keep throwing with the camera on, fix any wrong reads with F2, and run this again.")
-        return
+        print(f"Keep throwing with the camera on, fix any wrong reads with {fix_key}, and run this again.")
+        return False
 
     # ---- test: hold back 1 in 5 throws, build from the rest, and see how it does on those
     by_throw = defaultdict(list)
@@ -101,6 +110,7 @@ def main():
     train = [e for e in examples if e[0] not in held_back]
     test = [e for e in examples if e[0] in held_back]
 
+    kept = dv._model
     dv._model = build(train)
     right = confident = confident_right = 0
     mistakes = Counter()
@@ -120,12 +130,13 @@ def main():
     if mistakes:
         common = ", ".join(f"{real} read as {guess} ({n}x)" for (real, guess), n in mistakes.most_common(4))
         print(f"  most common mix-ups: {common}")
+    dv._model = kept
 
     # ---- final model from everything
     features, labels = build(examples)
-    np.savez_compressed(dv.MODEL_FILE, features=features, labels=labels, faces=len(examples))
-    print(f"\nSaved {os.path.basename(dv.MODEL_FILE)} ({len(examples)} pictures). "
-          "Restart the tracker to use it.")
+    np.savez_compressed(model_file, features=features, labels=labels, faces=len(examples))
+    print(f"\nSaved {os.path.basename(model_file)} ({len(examples)} pictures). {after}")
+    return True
 
 
 if __name__ == "__main__":
