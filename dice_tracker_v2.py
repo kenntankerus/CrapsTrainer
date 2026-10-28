@@ -3,7 +3,8 @@ Craps Dice Tracker  (version 2: camera + manual)
 ------------------------------------------------
 Log physical dice throws, tag each one with the dice set you used and where
 you stood at the table (12 o'clock, stick left, stick right), and compare
-sets, positions, or both together.
+sets, positions, or both together. Each user (the dropdown at top left) has
+their own stats; "Add new user..." at the bottom of the list adds one.
 
   * Camera on:  throws are read from the webcam and logged automatically.
                 Wrong read?  Type the right two digits (left die first, as in the
@@ -35,7 +36,7 @@ import time
 import tkinter as tk
 from collections import Counter
 from datetime import datetime
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 
 try:
     from dice_vision import DiceCamera
@@ -56,7 +57,9 @@ DATA_FILE = os.path.join(HERE, "dice_throws.csv")
 CROP_DIR = os.path.join(HERE, "dice_crops")      # one small picture per die, named <throw_id>_left/right.png
 STATE_FILE = os.path.join(HERE, "tracker_state.json")      # the dice set, position and up-facing last used
 FIELDS = ["timestamp", "session", "dice_set", "die1", "die2", "total", "back_wall", "source", "position",
-          "camera_read", "throw_id"]
+          "camera_read", "throw_id", "user"]
+FIRST_USER = "kenn"              # throws logged before there were users belong to this one
+ADD_USER = "Add new user..."
 # camera_read: what the camera said ("3-5"), "unclear" if it couldn't read the dice, "" for typed throws
 UNCLEAR_WINDOW = 120             # seconds: a throw typed this soon after an unclear read gets its pictures
 DEFAULT_SETS = ["3-V", "Hardway", "All Sevens", "Parallel", "Cross-Sixes", "Axis", "Random"]
@@ -626,6 +629,74 @@ def parse_dice(text):
     return int(digits[0]), int(digits[1])
 
 
+def upgrade_data_file():
+    """Rewrite an older dice_throws.csv with today's columns, so rows appended to it line up."""
+    if not os.path.exists(DATA_FILE):
+        return
+    with open(DATA_FILE, newline="") as f:
+        reader = csv.DictReader(f)
+        if all(field in (reader.fieldnames or []) for field in FIELDS):
+            return
+        rows = list(reader)
+    for row in rows:
+        row["user"] = row.get("user") or FIRST_USER
+    with open(DATA_FILE, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def known_users(state, throws=()):
+    users = [FIRST_USER] + list(state.get("users") or []) + [t["user"] for t in throws]
+    return list(dict.fromkeys(u for u in users if u))
+
+
+def update_state(**values):
+    """Save settings to the state file shared with craps_game.py, keeping the ones the other app wrote."""
+    try:
+        with open(STATE_FILE) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    if not isinstance(state, dict):
+        state = {}
+    state.update(values)
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except OSError:
+        pass
+
+
+class UserPicker:
+    """The user dropdown. Picking a name calls on_change(name); the last entry adds a new user."""
+
+    def __init__(self, parent, users, current, on_change):
+        self.users = list(users)
+        self.current = current if current in self.users else self.users[0]
+        self.on_change = on_change
+        self.var = tk.StringVar(value=self.current)
+        self.box = ttk.Combobox(parent, textvariable=self.var, values=self.users + [ADD_USER], width=12,
+                                state="readonly")
+        self.box.bind("<<ComboboxSelected>>", lambda e: self.picked())
+
+    def picked(self):
+        name = self.var.get()
+        if name == ADD_USER:
+            typed = (simpledialog.askstring("New user", "Name for the new user:", parent=self.box) or "").strip()
+            name = next((u for u in self.users if u.lower() == typed.lower()), typed)
+            if not name or name == ADD_USER:
+                self.var.set(self.current)
+                return
+            if name not in self.users:
+                self.users.append(name)
+                self.box.configure(values=self.users + [ADD_USER])
+            self.var.set(name)
+        if name != self.current:
+            self.current = name
+            self.on_change(name)
+
+
 # ----------------------------------------------------------------------- app
 class DiceTracker:
     def __init__(self, root):
@@ -633,8 +704,8 @@ class DiceTracker:
         apply_theme(root)
         root.title(f"Craps Dice Tracker - code from {_code_timestamp()}")
         root.state("zoomed")
-        self.throws = []
-        self.throws = self.load_throws()
+        self.throws = []                 # the current user's throws: everything on screen, undo and F2 use these
+        self.all_throws = self.load_throws()
         self.session = datetime.now().strftime("%Y-%m-%d")
         self.camera = None
         self._last_preview = None
@@ -643,6 +714,7 @@ class DiceTracker:
         self.pending_unclear = None      # (time, crops) from the last read the camera couldn't make
 
         self.build_controls()
+        self.throws = [t for t in self.all_throws if t["user"] == self.user_picker.current]
         self.bottom_frame = bottom = ttk.Frame(root, style="Felt.TFrame")                 # stats table on the left, chart on the right
         bottom.pack(side="bottom", fill="x", padx=12, pady=(6, 12))    # packed first so the chart is never squeezed out
         self.build_middle()
@@ -663,49 +735,53 @@ class DiceTracker:
         self.controls_frame = frame = ttk.Frame(self.root, padding=10)
         frame.pack(fill="x", padx=12, pady=(8, 4))
 
+        state = self.load_state()
+        ttk.Label(frame, text="User:").grid(row=0, column=0, sticky="w")
+        self.user_picker = UserPicker(frame, known_users(state, self.all_throws), state.get("user"), self.switch_user)
+        self.user_picker.box.grid(row=0, column=1, padx=(5, 10))
+
         # Dice set and table position: dropdowns you can also type a new name into
-        ttk.Label(frame, text="Dice set:").grid(row=0, column=0, sticky="w")
+        ttk.Label(frame, text="Dice set:").grid(row=0, column=2, sticky="w")
         known_sets = list(DEFAULT_SETS)
-        for t in self.throws:
+        for t in self.all_throws:
             if t["dice_set"] not in known_sets:
                 known_sets.append(t["dice_set"])
-        state = self.load_state()
         if state.get("dice_set") and state["dice_set"] not in known_sets:
             known_sets.append(state["dice_set"])
         self.set_var = tk.StringVar(value=state.get("dice_set") or known_sets[0])
         self.set_box = ttk.Combobox(frame, textvariable=self.set_var, values=known_sets, width=14)
-        self.set_box.grid(row=0, column=1, padx=5)
+        self.set_box.grid(row=0, column=3, padx=5)
         self.set_box.bind("<<ComboboxSelected>>", lambda e: self.after_set_change())
         self.set_box.bind("<Return>", lambda e: self.after_set_change())
 
-        ttk.Label(frame, text="Position:").grid(row=0, column=2, padx=(10, 0), sticky="w")
+        ttk.Label(frame, text="Position:").grid(row=0, column=4, padx=(10, 0), sticky="w")
         known_positions = list(DEFAULT_POSITIONS)
-        for t in self.throws:
+        for t in self.all_throws:
             if t["position"] not in known_positions and t["position"] != UNSPECIFIED:
                 known_positions.append(t["position"])
         if state.get("position") and state["position"] not in known_positions:
             known_positions.append(state["position"])
         self.position_var = tk.StringVar(value=state.get("position") or known_positions[0])
         self.position_box = ttk.Combobox(frame, textvariable=self.position_var, values=known_positions, width=11)
-        self.position_box.grid(row=0, column=3, padx=5)
+        self.position_box.grid(row=0, column=5, padx=5)
         self.position_box.bind("<<ComboboxSelected>>", lambda e: self.after_set_change())
         self.position_box.bind("<Return>", lambda e: self.after_set_change())
 
         # Dice entry: type two digits, e.g. 34, then press Enter
-        ttk.Label(frame, text="Dice (e.g. 34):").grid(row=0, column=4, padx=(10, 0))
+        ttk.Label(frame, text="Dice (e.g. 34):").grid(row=0, column=6, padx=(10, 0))
         self.dice_var = tk.StringVar()
         self.dice_entry = ttk.Entry(frame, textvariable=self.dice_var, width=6, font=(UI_FONT, 14))
-        self.dice_entry.grid(row=0, column=5, padx=5)
+        self.dice_entry.grid(row=0, column=7, padx=5)
         self.dice_entry.bind("<Return>", lambda e: self.log_manual())
 
-        ttk.Button(frame, text="Log new", style="Gold.TButton", command=self.log_manual).grid(row=0, column=6, padx=2)
-        ttk.Button(frame, text="Fix last (F2)", command=self.fix_last).grid(row=0, column=7, padx=2)
-        ttk.Button(frame, text="Undo (Ctrl+Z)", command=self.undo).grid(row=0, column=8, padx=2)
+        ttk.Button(frame, text="Log new", style="Gold.TButton", command=self.log_manual).grid(row=0, column=8, padx=2)
+        ttk.Button(frame, text="Fix last (F2)", command=self.fix_last).grid(row=0, column=9, padx=2)
+        ttk.Button(frame, text="Undo (Ctrl+Z)", command=self.undo).grid(row=0, column=10, padx=2)
 
         # Camera controls, top right
         cam = ttk.Frame(frame)
-        cam.grid(row=0, column=9, rowspan=4, sticky="nw", padx=(25, 0))
-        frame.columnconfigure(9, weight=1)
+        cam.grid(row=0, column=11, rowspan=4, sticky="nw", padx=(25, 0))
+        frame.columnconfigure(11, weight=1)
         self.camera_button = ttk.Button(cam, text="Start camera", style="Gold.TButton", command=self.toggle_camera)
         self.camera_button.grid(row=0, column=0, sticky="w")
         self.camera_status_var = tk.StringVar(value="Camera off")
@@ -724,7 +800,7 @@ class DiceTracker:
         self.speaker = Speaker()
         self.speaker.prepare(self.voice_var.get())
         self.hint_label = ttk.Label(cam, text="Camera wrong? Type the right digits (left die first), then F2.",
-                                    style="Muted.TLabel", wraplength=380)
+                                    style="Muted.TLabel", wraplength=300)
         self.hint_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         # Only for Hardway sets: how the dice are held. It takes the hint's place while it is showing.
@@ -735,14 +811,15 @@ class DiceTracker:
                                       width=5, state="readonly")
         self.setup_box.pack(side="left", padx=5)
         self.setup_box.bind("<<ComboboxSelected>>", lambda e: self.after_set_change())
-        ttk.Label(self.setup_frame, text="(e.g. 6-2 = sixes up, twos toward you)", style="Muted.TLabel").pack(side="left")
+        ttk.Label(self.setup_frame, text="(e.g. 6-2 = sixes up, twos toward you)", style="Muted.TLabel",
+                  wraplength=170).pack(side="left")
         self.set_var.trace_add("write", lambda *_: self.show_setup_box())
         self.show_setup_box()
 
         # The last throw, big enough to read from a distance
         self.last_var = tk.StringVar(value="No throws yet")
         last_row = ttk.Frame(frame)
-        last_row.grid(row=2, column=0, columnspan=9, sticky="w", pady=(12, 0))
+        last_row.grid(row=2, column=0, columnspan=11, sticky="w", pady=(12, 0))
         self.dice_canvas = tk.Canvas(last_row, width=138, height=64, bg=CARD, highlightthickness=0)
         self.dice_canvas.pack(side="left", padx=(0, 16))
         ttk.Label(last_row, textvariable=self.last_var, font=(UI_FONT, 20, "bold"), foreground=GOLD).pack(side="left")
@@ -750,7 +827,7 @@ class DiceTracker:
 
         self.status_var = tk.StringVar()
         ttk.Label(frame, textvariable=self.status_var, style="Muted.TLabel").grid(
-            row=3, column=0, columnspan=9, sticky="w", pady=(4, 0))
+            row=3, column=0, columnspan=11, sticky="w", pady=(4, 0))
 
     def build_bonus(self, middle):
         panel = ttk.LabelFrame(middle, text="Small / Tall / All", padding=10)
@@ -850,8 +927,10 @@ class DiceTracker:
             "source": source,
             "camera_read": camera_read,
             "throw_id": throw_id,
+            "user": self.user_picker.current,
         }
         self.throws.append(throw)
+        self.all_throws.append(throw)
         self.append_to_file(throw)
         self.show_last(throw)
         self.refresh()
@@ -900,6 +979,7 @@ class DiceTracker:
         if not self.throws:
             return
         removed = self.throws.pop()
+        self.all_throws = [t for t in self.all_throws if t is not removed]
         self.delete_crops(removed.get("throw_id", ""))
         self.rewrite_file()
         self.status_var.set(f"Removed {removed['die1']}-{removed['die2']} ({removed['dice_set']})")
@@ -962,13 +1042,22 @@ class DiceTracker:
             return {}
 
     def save_state(self):
-        state = {"dice_set": self.set_var.get().strip(), "setup": self.setup_var.get(),
-                 "position": self.position_var.get().strip(), "voice": self.voice_var.get()}
-        try:
-            with open(STATE_FILE, "w") as f:
-                json.dump(state, f, indent=2)
-        except OSError:
-            pass
+        update_state(dice_set=self.set_var.get().strip(), setup=self.setup_var.get(),
+                     position=self.position_var.get().strip(), voice=self.voice_var.get(),
+                     user=self.user_picker.current, users=self.user_picker.users)
+
+    def switch_user(self, name):
+        self.throws = [t for t in self.all_throws if t["user"] == name]
+        self.pending_unclear = None          # a missed throw's pictures belong to whoever was throwing
+        self.save_state()
+        if self.throws:
+            self.show_last(self.throws[-1])
+        else:
+            self.last_var.set("No throws yet")
+            self.draw_last_dice(0, 0)
+        self.status_var.set(f"Logging throws for {name}.")
+        self.refresh()
+        self.dice_entry.focus_set()
 
     def after_set_change(self):
         self.save_state()
@@ -1097,9 +1186,10 @@ class DiceTracker:
                     "position": row.get("position") or UNSPECIFIED,
                     "camera_read": row.get("camera_read") or "",
                     "throw_id": row.get("throw_id") or "",
+                    "user": row.get("user") or FIRST_USER,
                 })
         if old_format:                       # older file: add the new columns
-            self.throws = throws
+            self.all_throws = throws
             self.rewrite_file()
         return throws
 
@@ -1119,7 +1209,7 @@ class DiceTracker:
             with open(DATA_FILE, "w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=FIELDS)
                 writer.writeheader()
-                writer.writerows(self.throws)
+                writer.writerows(self.all_throws)
         except OSError as error:
             messagebox.showerror("Could not save", str(error))
 

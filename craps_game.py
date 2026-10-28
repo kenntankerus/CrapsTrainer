@@ -4,7 +4,8 @@ Craps Table  (sister app to dice_tracker_v2.py)
 Play a full craps table with your own throws. Pick a chip, click a spot on the
 layout to bet it, right-click to take a bet down, or drag a bet to another
 spot to move it. Click a come bet on its
-number (or the odds box under the line) to add odds.
+number (or the odds box under the line) to add odds. Each user (top left) has
+their own bankroll, bets and run stats.
 
   * Camera on:  throws are read from the webcam, exactly as in the tracker.
                 Wrong read?  Type the right two digits and press F2: the roll is
@@ -237,10 +238,16 @@ class CrapsGame:
         root.title("Craps Table")
         root.state("zoomed")
         self.session = datetime.now().strftime("%Y-%m-%d")
-        self.table, saved = self.load_game()
+        tracker.upgrade_data_file()          # an older log has no user column, and new rows would not line up
+        saved = self.load_game()
+        self.tables = saved["tables"]        # each user's table as saved; the current user's lives in self.table
         self.chip = saved.get("chip") if saved.get("chip") in CHIPS else CHIPS[1]
         saved_buy_in = saved.get("buy_in")
         self.buy_in = saved_buy_in if isinstance(saved_buy_in, int) and saved_buy_in > 0 else DEFAULT_BUY_IN
+        state = self.load_state()
+        self.users = tracker.known_users(state) + [u for u in self.tables if u not in tracker.known_users(state)]
+        self.user = state.get("user") if state.get("user") in self.users else self.users[0]
+        self.table = self.table_for(self.user)
         self.sounds_var = tk.BooleanVar(value=saved.get("sounds", True))
         self.clacks = chip_sounds()
         self.stats_window = None
@@ -279,6 +286,10 @@ class CrapsGame:
         frame.pack(fill="x", padx=12, pady=(8, 4))
         state = self.load_state()
 
+        ttk.Label(frame, text="User:").grid(row=0, column=0, sticky="w")
+        self.user_picker = tracker.UserPicker(frame, self.users, self.user, self.switch_user)
+        self.user_picker.box.grid(row=0, column=1, padx=(5, 10))
+
         known_sets = list(tracker.DEFAULT_SETS)
         if os.path.exists(tracker.DATA_FILE):
             with open(tracker.DATA_FILE, newline="") as f:
@@ -286,34 +297,34 @@ class CrapsGame:
                     name = row["dice_set"].split(" ")[0] if row["dice_set"].startswith("Hardway") else row["dice_set"]
                     if name not in known_sets:
                         known_sets.append(name)
-        ttk.Label(frame, text="Dice set:").grid(row=0, column=0, sticky="w")
+        ttk.Label(frame, text="Dice set:").grid(row=0, column=2, sticky="w")
         self.set_var = tk.StringVar(value=state.get("dice_set") or known_sets[0])
         set_box = ttk.Combobox(frame, textvariable=self.set_var, values=known_sets, width=14)
-        set_box.grid(row=0, column=1, padx=5)
+        set_box.grid(row=0, column=3, padx=5)
         self.setup_var = tk.StringVar(value=state.get("setup", "") if state.get("setup") in tracker.HARDWAY_SETUPS else "")
         self.setup_box = ttk.Combobox(frame, textvariable=self.setup_var, values=[""] + tracker.HARDWAY_SETUPS,
                                       width=5, state="readonly")
         self.set_var.trace_add("write", lambda *_: self.show_setup_box())
 
-        ttk.Label(frame, text="Position:").grid(row=0, column=3, padx=(10, 0), sticky="w")
+        ttk.Label(frame, text="Position:").grid(row=0, column=5, padx=(10, 0), sticky="w")
         self.position_var = tk.StringVar(value=state.get("position") or tracker.DEFAULT_POSITIONS[0])
         ttk.Combobox(frame, textvariable=self.position_var, values=tracker.DEFAULT_POSITIONS, width=11).grid(
-            row=0, column=4, padx=5)
+            row=0, column=6, padx=5)
         for box in (set_box, self.setup_box):
             box.bind("<<ComboboxSelected>>", lambda e: (self.save_state(), self.dice_entry.focus_set()))
 
-        ttk.Label(frame, text="Dice (e.g. 34):").grid(row=0, column=5, padx=(10, 0))
+        ttk.Label(frame, text="Dice (e.g. 34):").grid(row=0, column=7, padx=(10, 0))
         self.dice_var = tk.StringVar()
         self.dice_entry = ttk.Entry(frame, textvariable=self.dice_var, width=6, font=(UI_FONT, 14))
-        self.dice_entry.grid(row=0, column=6, padx=5)
+        self.dice_entry.grid(row=0, column=8, padx=5)
         self.dice_entry.bind("<Return>", lambda e: self.roll_typed())
-        ttk.Button(frame, text="Roll", style="Gold.TButton", command=self.roll_typed).grid(row=0, column=7, padx=2)
-        ttk.Button(frame, text="Fix last (F2)", command=self.fix_last).grid(row=0, column=8, padx=2)
-        ttk.Button(frame, text="Undo (Ctrl+Z)", command=self.undo).grid(row=0, column=9, padx=2)
+        ttk.Button(frame, text="Roll", style="Gold.TButton", command=self.roll_typed).grid(row=0, column=9, padx=2)
+        ttk.Button(frame, text="Fix last (F2)", command=self.fix_last).grid(row=0, column=10, padx=2)
+        ttk.Button(frame, text="Undo (Ctrl+Z)", command=self.undo).grid(row=0, column=11, padx=2)
 
         cam = ttk.Frame(frame)
-        cam.grid(row=0, column=10, rowspan=2, sticky="nw", padx=(25, 0))
-        frame.columnconfigure(10, weight=1)
+        cam.grid(row=0, column=12, rowspan=2, sticky="nw", padx=(25, 0))
+        frame.columnconfigure(12, weight=1)
         self.camera_button = ttk.Button(cam, text="Start camera", style="Gold.TButton", command=self.toggle_camera)
         self.camera_button.grid(row=0, column=0, sticky="w")
         self.camera_status_var = tk.StringVar(value="Camera off")
@@ -332,7 +343,7 @@ class CrapsGame:
 
         self.status_var = tk.StringVar(value="Click or drag a chip onto the layout to bet. Drag a bet to move it, or to the rack to take it down.")
         ttk.Label(frame, textvariable=self.status_var, style="Muted.TLabel").grid(
-            row=1, column=0, columnspan=10, sticky="w", pady=(8, 0))
+            row=1, column=0, columnspan=12, sticky="w", pady=(8, 0))
         self.show_setup_box()
 
     def build_layout(self, parent, saved_hop):
@@ -424,7 +435,7 @@ class CrapsGame:
 
     def show_setup_box(self):
         if self.set_var.get().strip() == "Hardway":
-            self.setup_box.grid(row=0, column=2, padx=(0, 5))
+            self.setup_box.grid(row=0, column=4, padx=(0, 5))
         else:
             self.setup_box.grid_remove()
 
@@ -865,7 +876,7 @@ class CrapsGame:
         throw = {"timestamp": datetime.now().isoformat(timespec="seconds"), "session": self.session,
                  "dice_set": self.current_set(), "position": self.position_var.get().strip() or tracker.UNSPECIFIED,
                  "die1": die1, "die2": die2, "total": die1 + die2, "back_wall": self.back_wall_var.get(),
-                 "source": source, "camera_read": camera_read, "throw_id": throw_id}
+                 "source": source, "camera_read": camera_read, "throw_id": throw_id, "user": self.user}
         try:
             append_throw(throw)
         except OSError as error:
@@ -1070,31 +1081,57 @@ class CrapsGame:
             return {}
 
     def save_state(self):
-        """The dice set, position and voice are shared with the tracker."""
-        state = {"dice_set": self.set_var.get().strip(), "setup": self.setup_var.get(),
-                 "position": self.position_var.get().strip(), "voice": self.voice_var.get()}
-        try:
-            with open(tracker.STATE_FILE, "w") as f:
-                json.dump(state, f, indent=2)
-        except OSError:
-            pass
+        """The dice set, position, voice and user are shared with the tracker."""
+        tracker.update_state(dice_set=self.set_var.get().strip(), setup=self.setup_var.get(),
+                             position=self.position_var.get().strip(), voice=self.voice_var.get(),
+                             user=self.user, users=self.user_picker.users)
 
     def load_game(self):
-        """The saved table, and the game's own settings (chip, hop, buy-in, sounds) as a dict."""
+        """The game's own settings (chip, hop, buy-in, sounds) and each user's table, as a dict."""
         try:
             with open(GAME_FILE) as f:
                 saved = json.load(f)
-            return CrapsTable.from_dict(saved["table"]), saved
-        except (OSError, ValueError, KeyError, TypeError):
-            return CrapsTable(DEFAULT_BUY_IN), {}
+            if not isinstance(saved, dict):
+                raise ValueError
+        except (OSError, ValueError):
+            saved = {}
+        if "table" in saved:                 # saved before there were users
+            saved.setdefault("tables", {tracker.FIRST_USER: saved.pop("table")})
+        if not isinstance(saved.get("tables"), dict):
+            saved["tables"] = {}
+        return saved
+
+    def table_for(self, user):
+        try:
+            return CrapsTable.from_dict(self.tables[user])
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return CrapsTable(self.buy_in)
 
     def save_game(self):
+        self.tables[self.user] = self.table.to_dict()
         try:
             with open(GAME_FILE, "w") as f:
-                json.dump({"table": self.table.to_dict(), "chip": self.chip, "hop": self.hop_var.get(),
+                json.dump({"tables": self.tables, "chip": self.chip, "hop": self.hop_var.get(),
                            "buy_in": self.buy_in, "sounds": self.sounds_var.get()}, f, indent=2)
         except OSError:
             pass
+
+    def switch_user(self, name):
+        """Put the last user's table away and bring out this one's: bankroll, bets, point and run stats."""
+        self.save_game()
+        self.user = name
+        self.table = self.table_for(name)
+        self.comeout_var.set(self.table.work_on_comeout)
+        self.history = []                    # F2 and Ctrl+Z only reach back to this user's own rolls
+        self.pending_unclear = None
+        self.roll_list.delete(0, "end")
+        self.payouts.delete(0, "end")
+        self.call_var.set("")
+        self.draw_dice(0, 0)
+        self.last_var.set("No rolls yet")
+        self.save_state()
+        self.status_var.set(f"{name}'s table: {money(self.table.bankroll)} in the rack.")
+        self.after_change()
 
     def rewrite(self, throw_id, throw=None):
         try:
