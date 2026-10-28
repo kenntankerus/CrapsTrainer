@@ -36,16 +36,16 @@ from tkinter import ttk, messagebox
 
 import dice_tracker_v2 as tracker
 from craps_engine import (BONUS_PAYS, HARD_PAYS, HOP_COMBOS, POINTS, SMALL_NUMBERS, TALL_NUMBERS, BetError,
-                          CrapsTable, hop_spot, money, spot_name)
+                          CrapsTable, hop_spot, money, run_summary, signed, spot_name)
 from dice_tracker_v2 import (BUTTON, CARD, EDGE, FELT, GOLD, INSET, MUTED, RED, TEXT, UI_FONT, DiceCamera,
                              Speaker, apply_theme, draw_die, parse_dice)
+from stickman import stickman_call
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME_FILE = os.path.join(HERE, "craps_game_state.json")      # bankroll, bets and point, so a game can be picked up later
 SOUND_DIR = os.path.join(HERE, "sounds")                      # made on first run by make_clack()
 DEFAULT_BUY_IN = 10000                                        # cents
 BUY_INS = ("$100", "$200", "$500", "$1,000")
-FAIR_SEVENS, FAIR_POINTS_MADE, FAIR_HAND = 1 / 6, 0.406, 8.5     # what fair dice give, for the run stats
 CHIPS = (100, 500, 2500, 10000, 50000)
 CHIP_COLOURS = ((50000, "#6b3fa0", TEXT), (10000, "#1b1b1b", TEXT), (2500, "#2e8b57", TEXT),
                 (500, "#c0392b", TEXT), (0, "#ecebe4", "#1a1405"))
@@ -90,39 +90,6 @@ def replace_throw(throw_id, throw=None):
         writer.writerows(rows)
 
 
-def stickman_call(result, variant, voice):
-    """The stickman's words for a roll (None = a no-roll), as (text, mood) pieces from the tracker's lines."""
-    if result is None:
-        keys = ["no_roll"]
-    else:
-        total, point = result["total"], result["point_before"]
-        if point is None:
-            keys = [f"co_point_{total}"] if total in POINTS else [f"co_{total}", "coming_out"]
-        elif total == 7:
-            keys = ["out"] + (["good_roll"] if result["last_run"] >= tracker.HOT_ROLLS[0] else []) + ["new_shooter"]
-        elif total == point:
-            keys = [f"made_hard_{total}" if result["hard"] and total % 2 == 0 else f"made_{total}", "coming_out"]
-        elif total in (4, 6, 8, 10):
-            keys = [f"{'hard' if result['hard'] else 'easy'}_{total}"]
-        elif total in (5, 9):
-            keys = [f"num_{total}"]
-        else:
-            keys = [f"pt_{total}"]
-        if result["previous_total"] == total and keys[0] != "out":
-            keys.insert(1, f"b2b_{total}")
-        if result["shooter_rolls"] in tracker.HOT_ROLLS:
-            keys.append(f"hot_{result['shooter_rolls']}")
-        if result["bonus_wins"]:
-            keys.insert(1, f"bonus_{result['bonus_wins'][-1]}")
-    lines = tracker.voice_lines(voice)
-    pieces = []
-    for key in keys[:3]:
-        variants, mood = lines[key]
-        i = variant % len(variants)
-        pieces.append((variants[i], mood, f"{key}_{i}"))
-    return pieces
-
-
 def make_clack(path, seed):
     """Write a clay chip landing on another: a sharp knock, then one or two smaller ones as it settles."""
     rng = random.Random(seed)
@@ -157,41 +124,6 @@ def chip_sounds():
     except OSError:
         return []
     return paths
-
-
-def signed(cents):
-    return ("+" if cents > 0 else "") + money(cents)
-
-
-def run_summary(table):
-    """The run stats as (section, [(caption, value), ...]) for the stats window."""
-    st = table.stats
-    rolls, sevens, hands = st["rolls"], st["totals"]["7"], st["hands"]
-    started = datetime.fromisoformat(st["started"])
-    minutes = int((datetime.now() - started).total_seconds() // 60)
-    action = money(st["action"]) + (f"   (result {table.up / st['action']:+.1%} of that)" if st["action"] else "")
-    decided = st["points_made"] + hands          # every finished hand ended with a point lost
-    money_lines = [
-        ("Started", f"{started:%b %d, %H:%M}   ({minutes // 60}h {minutes % 60:02d}m ago)"),
-        ("Bought in", money(table.bought_in) + (f"   ({st['buy_ins']} buy-ins)" if st["buy_ins"] > 1 else "")),
-        ("Bankroll now", f"{money(table.bankroll + table.on_table)}   ({signed(table.up)})"),
-        ("Highest / lowest", f"{signed(st['high'])} / {signed(st['low'])}"),
-        ("Total bet (action)", action),
-        ("Best / worst roll", f"{signed(st['best_roll'])} / {signed(st['worst_roll'])}"),
-    ]
-    longest = max(st["longest_hand"], table.shooter_rolls)
-    dice_lines = [
-        ("Rolls", str(rolls) + (f"   (+ {st['no_rolls']} no-rolls)" if st["no_rolls"] else "")),
-        ("Sevens", f"{sevens}   ({sevens / rolls:.1%}, fair dice {FAIR_SEVENS:.1%})" if rolls else "0"),
-        ("Hands", f"{hands} finished, {st['hand_rolls'] / hands:.1f} rolls each (fair dice {FAIR_HAND})" if hands
-         else "none finished yet"),
-        ("Longest / current hand", f"{longest} / {table.shooter_rolls} rolls"),
-        ("Points made", f"{st['points_made']} of {decided}" + (
-            f"   ({st['points_made'] / decided:.0%}, fair dice {FAIR_POINTS_MADE:.0%})" if decided else "")),
-        ("Come-out 7-11 / craps", f"{st['naturals']} / {st['craps']}"),
-        ("Small / Tall / All made", "{Small} / {Tall} / {All}".format(**st["bonus"])),
-    ]
-    return [("MONEY", money_lines), ("DICE", dice_lines)]
 
 
 def build_zones():

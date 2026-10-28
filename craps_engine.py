@@ -21,6 +21,7 @@ HARD_PAYS = {4: 7, 6: 9, 8: 9, 10: 7}
 SINGLE_PAYS = {"aces": (2, 30), "ace_deuce": (3, 15), "yo": (11, 15), "twelve": (12, 30)}   # spot: (total, pays)
 BONUS_PAYS = {"small": 34, "tall": 34, "all": 175}
 SMALL_NUMBERS, TALL_NUMBERS = {2, 3, 4, 5, 6}, {8, 9, 10, 11, 12}
+FAIR_SEVENS, FAIR_POINTS_MADE, FAIR_HAND = 1 / 6, 0.406, 8.5     # what fair dice give, for the run stats
 HOP_COMBOS = [f"{a}-{b}" for a in range(1, 7) for b in range(a, 7)]
 
 ONE_ROLL = ["field", "any7", "any_craps", "horn", "ce"] + list(SINGLE_PAYS)
@@ -434,3 +435,38 @@ class CrapsTable:
         if "All" in made:
             self.bonus_hits, self.bonus_rolls, self.small_done, self.tall_done = set(), 0, False, False
         return made
+
+
+def signed(cents):
+    return ("+" if cents > 0 else "") + money(cents)
+
+
+def run_summary(table):
+    """The run stats as (section, [(caption, value), ...]) for the stats window."""
+    st = table.stats
+    rolls, sevens, hands = st["rolls"], st["totals"]["7"], st["hands"]
+    started = datetime.fromisoformat(st["started"])
+    minutes = int((datetime.now() - started).total_seconds() // 60)
+    action = money(st["action"]) + (f"   (result {table.up / st['action']:+.1%} of that)" if st["action"] else "")
+    decided = st["points_made"] + hands          # every finished hand ended with a point lost
+    money_lines = [
+        ("Started", f"{started:%b %d, %H:%M}   ({minutes // 60}h {minutes % 60:02d}m ago)"),
+        ("Bought in", money(table.bought_in) + (f"   ({st['buy_ins']} buy-ins)" if st["buy_ins"] > 1 else "")),
+        ("Bankroll now", f"{money(table.bankroll + table.on_table)}   ({signed(table.up)})"),
+        ("Highest / lowest", f"{signed(st['high'])} / {signed(st['low'])}"),
+        ("Total bet (action)", action),
+        ("Best / worst roll", f"{signed(st['best_roll'])} / {signed(st['worst_roll'])}"),
+    ]
+    longest = max(st["longest_hand"], table.shooter_rolls)
+    dice_lines = [
+        ("Rolls", str(rolls) + (f"   (+ {st['no_rolls']} no-rolls)" if st["no_rolls"] else "")),
+        ("Sevens", f"{sevens}   ({sevens / rolls:.1%}, fair dice {FAIR_SEVENS:.1%})" if rolls else "0"),
+        ("Hands", f"{hands} finished, {st['hand_rolls'] / hands:.1f} rolls each (fair dice {FAIR_HAND})" if hands
+         else "none finished yet"),
+        ("Longest / current hand", f"{longest} / {table.shooter_rolls} rolls"),
+        ("Points made", f"{st['points_made']} of {decided}" + (
+            f"   ({st['points_made'] / decided:.0%}, fair dice {FAIR_POINTS_MADE:.0%})" if decided else "")),
+        ("Come-out 7-11 / craps", f"{st['naturals']} / {st['craps']}"),
+        ("Small / Tall / All made", "{Small} / {Tall} / {All}".format(**st["bonus"])),
+    ]
+    return [("MONEY", money_lines), ("DICE", dice_lines)]
