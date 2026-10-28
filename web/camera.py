@@ -150,17 +150,18 @@ class CameraService:
         read = f"{die1}-{die2}"
         try:
             if owner["mode"] == "tracker":
-                call, throw_id = tables.log_throw(user_id, player_id, die1, die2, owner["back_wall"], owner,
+                said, throw_id = tables.log_throw(user_id, player_id, die1, die2, owner["back_wall"], owner,
                                                   owner["voice"], source="camera", camera_read=read)
             else:
-                call, throw_id = tables.roll(user_id, player_id, die1, die2, owner["back_wall"], owner,
-                                             owner["voice"], owner["buy_in"], source="camera", camera_read=read)
+                said, throw_id = tables.roll(user_id, player_id, die1, die2, owner["back_wall"], owner,
+                                             owner["voice"], owner["buy_in"], source="camera", camera_read=read,
+                                             premium=owner.get("premium", False), personal=owner.get("personal", True))
         except tables.TableError:
             events.publish(user_id, "camera_error", message="The player the camera was throwing for is gone.")
             return
         save_crops(throw_id, crops)
-        events.publish(user_id, "camera_throw", player_id=player_id, dice=[die1, die2], call=call,
-                       voice=owner["voice"], client=owner["client"],
+        events.publish(user_id, "camera_throw", player_id=player_id, dice=[die1, die2], call=said["call"],
+                       reaction=said["reaction"], client=owner["client"],
                        message=f"Camera read {die1}-{die2}. Wrong? Tap the right dice (left die first) and Fix last.")
 
     def _unclear(self, payload):

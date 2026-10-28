@@ -203,6 +203,7 @@ async function boot(message = "") {
   S.camera = S.me.camera;
   drawCamera();
   connectLive();
+  prefetchVoice();
   await refresh();
 }
 
@@ -344,7 +345,7 @@ function setupControls() {
     syncCamera();
     if (S.tab === "tracker") refresh();
   });
-  $("voice").addEventListener("change", () => { saveSettings({ voice: $("voice").value }); setTimeout(syncCamera, 500); });
+  $("voice").addEventListener("change", () => { saveSettings({ voice: $("voice").value }); prefetchVoice(); setTimeout(syncCamera, 500); });
   $("back-wall").addEventListener("change", () => { saveSettings({ back_wall: $("back-wall").checked }); syncCamera(); });
   $("sounds").addEventListener("change", () => saveSettings({ sounds: $("sounds").checked }));
   $("compare").addEventListener("change", () => { saveSettings({ compare: $("compare").value }); refresh(); });
@@ -460,6 +461,7 @@ function rollDice() {
     return;
   }
   sound.unlock();
+  if (S.mix.sfx) sound.diceRoll();
   const [die1, die2] = S.dice;
   return busy(async () => {
     const result = await api(`/api/players/${S.player}/roll`, {
@@ -499,7 +501,8 @@ function undo() {
 }
 
 function speak(result) {
-  if (result.call?.length && $("voice").value !== "Off") sound.say(result.call, voiceSlug());
+  if (result.call?.length && $("voice").value !== "Off") sound.say(result.call);
+  if (result.reaction && S.mix.crowdOn) setTimeout(() => sound.react(result.reaction), 250);
 }
 
 // ---------------------------------------------------------------- loading what's on screen
@@ -988,6 +991,78 @@ async function addGuest() {
   }
 }
 
+// ---------------------------------------------------------------- the sound mix
+// Volumes and the room/crowd switches belong to this device (a phone at the table and a laptop across the room
+// want different ones), so they're kept in the browser. Personal calls are an account setting.
+S.mix = { voice: 1, room: 0.35, crowd: 0.6, sfx: 0.8, roomOn: true, crowdOn: true };
+try { Object.assign(S.mix, JSON.parse(localStorage.getItem("craps.mix") || "{}")); } catch { /* defaults */ }
+
+function saveMix() {
+  try { localStorage.setItem("craps.mix", JSON.stringify(S.mix)); } catch { /* not kept */ }
+}
+
+function applyMix() {
+  for (const part of ["voice", "room", "crowd", "sfx"]) sound.setVolume(part, S.mix[part]);
+  sound.room(S.mix.roomOn && !document.hidden);
+}
+
+async function prefetchVoice() {
+  const slug = voiceSlug();
+  if (!slug) return;
+  try {
+    const info = await api(`/api/voice/${slug}/clips`);
+    S.voiceEngines = info.engines;
+    sound.prefetch(info.urls);
+  } catch { /* the lines are fetched as they're needed */ }
+}
+
+let soundStarted = false;
+function startSound() {
+  // the first tap anywhere: browsers only let a page make sound once someone has touched it
+  if (soundStarted) return;
+  soundStarted = true;
+  sound.unlock();
+  applyMix();
+  api("/api/sounds").then((r) => sound.loadRecorded(r.sounds)).catch(() => {});
+}
+
+const ENGINE_NAMES = { elevenlabs: "ElevenLabs", kokoro: "Kokoro (on the server)", edge: "Microsoft's online voices" };
+
+function openMix() {
+  const box = clear($("mix-sliders"));
+  for (const [part, label] of [["voice", "Stickman"], ["room", "Room"], ["crowd", "Crowd"], ["sfx", "Dice and chips"]]) {
+    item(box, "label", label).htmlFor = `volume-${part}`;
+    const range = item(box, "input");
+    Object.assign(range, { type: "range", id: `volume-${part}`, min: 0, max: 1, step: 0.05, value: S.mix[part] });
+    const out = item(box, "output", `${Math.round(S.mix[part] * 100)}%`);
+    range.addEventListener("input", () => {
+      S.mix[part] = Number(range.value);
+      out.textContent = `${Math.round(S.mix[part] * 100)}%`;
+      sound.setVolume(part, S.mix[part]);
+      saveMix();
+    });
+  }
+  $("mix-room").checked = S.mix.roomOn;
+  $("mix-crowd").checked = S.mix.crowdOn;
+  $("mix-personal").checked = S.settings.personal !== false;
+  const engines = S.voiceEngines || [];
+  $("mix-engine").textContent = $("voice").value === "Off" ? "The stickman is off." :
+    engines.length ? `${$("voice").value}'s lines come from ${ENGINE_NAMES[engines[0]] || engines[0]}.` :
+      `${$("voice").value}'s lines are read by this browser's own voice: the server has no voice engine.`;
+  $("mix-dialog").showModal();
+}
+
+function setupMix() {
+  document.addEventListener("pointerdown", startSound, { capture: true });
+  document.addEventListener("keydown", startSound, { capture: true });
+  $("mix-button").addEventListener("click", () => { startSound(); openMix(); });
+  $("mix-room").addEventListener("change", () => { S.mix.roomOn = $("mix-room").checked; saveMix(); applyMix(); });
+  $("mix-crowd").addEventListener("change", () => { S.mix.crowdOn = $("mix-crowd").checked; saveMix(); });
+  $("mix-personal").addEventListener("change", () => saveSettings({ personal: $("mix-personal").checked }));
+  $("mix-test").addEventListener("click", () => { sound.diceRoll(); setTimeout(() => sound.react("cheer"), 900); });
+  document.addEventListener("visibilitychange", () => { if (soundStarted) sound.room(S.mix.roomOn && !document.hidden); });
+}
+
 // ---------------------------------------------------------------- live updates from the server
 let live = null;
 function connectLive() {
@@ -1012,7 +1087,7 @@ function connectLive() {
       if (m.player_id === S.player) refresh(true);
       if (mine) {
         if ($("sounds").checked) sound.beep(true);
-        if (m.call?.length && $("voice").value !== "Off") sound.say(m.call, voiceSlug());
+        speak(m);
         status(m.message);
       }
     } else if (m.type === "camera_unclear") {
@@ -1221,6 +1296,7 @@ async function start() {
   setupMenu();
   guardSheet();
   setupCamera();
+  setupMix();
   document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("main").hidden) refresh(); });
   if (location.pathname === "/auth/verify") return verifyLink();
   await boot();

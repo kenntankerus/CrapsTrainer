@@ -15,8 +15,14 @@ What's in this first version:
   like Ctrl+Z and F2. Rolls settle on the server, so a phone and a laptop show the same table.
 * **The tracker**: log throws without bets, and compare dice sets and positions against fair dice,
   with the Small / Tall / All runs and the totals chart.
-* **The stickman**: the same lines and voices. Lines are made with edge-tts on the server (or played
-  from `voice_packs/`), and the browser's own voice reads them if the server can't.
+* **The stickman**: the same lines and voices, plus personal calls about your own roll ("Pay the hard
+  eight, forty-five dollars", your name, what a seven-out cost). Lines come from your recorded packs,
+  ElevenLabs, a free voice running on the server, or Microsoft's online voices, best first, and the page
+  fetches them all ahead of time so calls play the moment the dice land. See
+  [The stickman's voice](#the-stickmans-voice).
+* **Sound**: a busy-casino room, a crowd that cheers a point made and groans at a seven-out, dice
+  clatter and chip clacks, mixed in the browser with a volume for each (the *Sound* button). The room
+  and crowd dip while the stickman talks.
 * **The camera**: the webcam plugged into the server reads each throw, as in the desktop apps, and
   rolls it (or logs it, on the Tracker tab) for whoever pressed *Start camera*. Every page that
   account has open updates as the dice land. Tuning sliders, a live picture and retraining the dice
@@ -203,6 +209,42 @@ differently, so check them the first time:
 **Retrain the dice reader** (in the Tune window, or `docker compose exec web python -m web.train`)
 learns from every camera throw's saved pictures, including the 560 brought over from the desktop.
 
+## The stickman's voice
+
+For each line, the server uses the best voice it can, in this order, and keeps what it makes:
+
+1. **Your recorded packs**: `voice_packs/<voice>/` from `make_voice_pack.py`. Copy the folder over from
+   Windows; `docker-compose.yml` already hands it to the server.
+2. **ElevenLabs**, in the voices you designed there. In `.env`:
+   ```
+   CRAPS_ELEVENLABS_API_KEY=your key
+   CRAPS_ELEVENLABS_VOICES=Precious (Gollum-ish)=VOICE_ID; Shean (Connery-ish)=VOICE_ID
+   ```
+   Use the names exactly as the Stickman list shows them; each voice's ID is on its page under *Voices*
+   in ElevenLabs. The fixed lines are about 4,000 characters per voice, made once.
+3. **Kokoro**, a free voice that runs on the server. Fetch its model once (about 340 MB):
+   ```
+   docker compose exec web python -m web.get_voices
+   docker compose exec web python -m web.get_voices --prepare     # optional: record every line now (slow; overnight is fine)
+   ```
+4. **Microsoft's online voices** (edge-tts), as the desktop apps use them.
+5. Failing all of those, the browser reads the line with its own voice.
+
+The *Sound* window says which one the chosen voice is using.
+
+**Personal calls** are made the first time they come up and kept, so "Pay the field, five dollars" is
+only made once. With a free voice (Kokoro or Microsoft's) everyone gets them. In a voice that comes from
+ElevenLabs they cost a little each, so only the accounts in `CRAPS_PREMIUM_USERS` (your camera users,
+unless you set it) get them, and `CRAPS_ELEVENLABS_DAILY_CHARS` (20,000 by default) caps what goes to
+ElevenLabs in a day. Anyone can turn them off in the *Sound* window.
+
+**Room and crowd sounds** are made in the browser until you record real ones with ElevenLabs' sound
+effects, once:
+
+```
+docker compose exec web python -m web.make_sounds
+```
+
 ## Settings
 
 All in `.env`; `.env.example` lists them. The ones not covered above: `CRAPS_CAMERA` and `CRAPS_CAMERA_USERS` (see The camera), `CRAPS_DATA_DIR` (where the data
@@ -217,7 +259,9 @@ lives), `CRAPS_TTS=0` (skip edge-tts and let the browser speak), `CRAPS_VOICE_PA
 | `web/auth.py` | sign-in links, sessions, rate limits, the bot check, guests taking their history |
 | `web/tables.py` | the craps table on the server: what `craps_game.py` does with clicks, done per request |
 | `web/stats.py` | the tracker's numbers, as `dice_tracker_v2.py` shows them |
-| `web/voice.py` | stickman clips: recorded packs, else made with edge-tts and kept |
+| `web/voice.py` | stickman clips: recorded packs, then ElevenLabs, Kokoro or edge-tts, made once and kept |
+| `web/calls.py` | personal calls (payouts, names) and how the crowd reacts |
+| `web/get_voices.py`, `web/make_sounds.py` | fetching Kokoro's model and recording lines; recording room and crowd sounds |
 | `web/camera.py` | the webcam: runs `dice_vision.py`, rolls each throw for whoever started it, tuning |
 | `web/camera_demo.py` | the pretend camera, for trying it out and for the tests |
 | `web/events.py` | live updates to open pages (server-sent events) |

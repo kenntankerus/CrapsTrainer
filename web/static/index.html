@@ -86,6 +86,7 @@
         <select id="voice"></select>
       </div>
       <label class="toggle"><input type="checkbox" id="back-wall" checked> Hit back wall</label>
+      <button type="button" id="mix-button">Sound</button>
     </section>
 
     <section class="card entry" aria-label="Dice">
@@ -248,6 +249,24 @@
       <div class="dialog-actions">
         <button value="cancel" formnovalidate>Cancel</button>
         <button value="ok" class="gold" id="ask-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="mix-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Sound</h2>
+      <div class="sliders" id="mix-sliders"></div>
+      <div class="stack" style="margin-top: 12px">
+        <label class="toggle"><input type="checkbox" id="mix-room"> Room noise: a busy casino in the background</label>
+        <label class="toggle"><input type="checkbox" id="mix-crowd"> Crowd cheers and groans on big rolls</label>
+        <label class="toggle"><input type="checkbox" id="mix-personal"> Personal calls: payouts and your name</label>
+      </div>
+      <p class="small muted" id="mix-engine"></p>
+      <p class="small muted">Volumes and the room and crowd switches are kept on this device.</p>
+      <div class="dialog-actions">
+        <button type="button" id="mix-test">Try it</button>
+        <button value="close" class="gold">Done</button>
       </div>
     </form>
   </dialog>
