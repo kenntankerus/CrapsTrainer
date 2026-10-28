@@ -71,6 +71,22 @@ TTS = _flag("TTS", True)
 # pretend camera that throws drawn dice. Empty means no camera. Only the accounts listed may use it.
 CAMERA_SOURCE = _get("CAMERA")
 CAMERA_USERS = {e.strip().lower() for e in _get("CAMERA_USERS").split(",") if e.strip()}
+PREMIUM_USERS = {e.strip().lower() for e in _get("PREMIUM_USERS").split(",") if e.strip()} or CAMERA_USERS
+
+# Voices. ElevenLabs (the same key make_voice_pack.py uses) records the lines in your designed voices: list each
+# character's voice ID as  Name=ID; Name=ID  using the names in the Stickman list. Personal calls (names, payouts)
+# are made as they're needed, so only the accounts in CRAPS_PREMIUM_USERS get them from ElevenLabs, and no more
+# than CRAPS_ELEVENLABS_DAILY_CHARS characters a day go to it in all.
+ELEVENLABS_KEY = _get("ELEVENLABS_API_KEY") or os.environ.get("ELEVENLABS_API_KEY", "").strip()
+ELEVENLABS_VOICES = dict(
+    (name.strip(), voice_id.strip()) for name, _, voice_id in
+    (pair.partition("=") for pair in _get("ELEVENLABS_VOICES").split(";")) if name.strip() and voice_id.strip())
+ELEVENLABS_MODEL = _get("ELEVENLABS_MODEL", "eleven_v3")                 # the stickman's fixed lines
+ELEVENLABS_FAST_MODEL = _get("ELEVENLABS_FAST_MODEL", "eleven_flash_v2_5")   # personal calls, made while you wait
+ELEVENLABS_DAILY_CHARS = int(_get("ELEVENLABS_DAILY_CHARS", "20000") or 0)
+# Kokoro, a free voice that runs on this computer, once its model files are in this folder (python -m web.get_voices)
+KOKORO_DIR = os.path.abspath(_get("KOKORO_DIR", os.path.join(DATA_DIR, "models", "kokoro")))
+SOUND_DIR = os.path.join(DATA_DIR, "sounds")     # recorded room and crowd sounds (python -m web.make_sounds)
 
 LINK_MINUTES = 15                  # a sign-in link works once, for this long
 SESSION_DAYS = 90                  # how long a device stays signed in without being used

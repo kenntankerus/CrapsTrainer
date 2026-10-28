@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from craps_engine import (BONUS_PAYS, HOP_COMBOS, POINTS, SPOTS, BetError, CrapsTable, hop_spot, money,
                           run_summary, signed, spot_name)
 from dice_stats import UNSPECIFIED
-from stickman import DEFAULT_VOICE, VOICES, croupier_call, stickman_call
+from stickman import DEFAULT_VOICE, VOICES, croupier_call, pack_name, stickman_call
 
 from . import db
 
@@ -161,9 +161,31 @@ def describe(result, throw):
 
 
 def call_pieces(pieces, voice):
-    """The stickman's words for the browser: the recorded clip's name and the text to speak without it."""
+    """The stickman's words for the browser: where to fetch each recording, and the text to speak without it."""
     from .voice import spoken
-    return [{"clip": name, "text": text, "spoken": spoken(text, voice), "mood": mood} for text, mood, name in pieces]
+    slug = pack_name(voice)
+    return [{"clip": name, "url": f"/api/voice/{slug}/{name}", "text": text, "spoken": spoken(text, voice), "mood": mood}
+            for text, mood, name in pieces]
+
+
+def speech(pieces, voice, result=None, name="", premium=False, personal=True):
+    """What the page plays for a roll: the stickman's call (with a personal line about the roll when there is one)
+    and the crowd's reaction. pieces are stickman_call's or croupier_call's, made even with the voice off."""
+    from .calls import personal_call, reaction
+    from .voice import personal_engine, remember_line, spoken
+    net = result["net"] if result else 0
+    out = {"call": [], "reaction": reaction([piece[2].rsplit("_", 1)[0] for piece in pieces], net)}
+    if voice not in VOICES:
+        return out
+    out["call"] = call_pieces(pieces, voice)
+    line = personal_call(result, name, voice) if personal else None
+    engine = personal_engine(voice, premium) if line else None
+    if line and engine:
+        text, mood = line
+        token = remember_line(voice, text, mood, engine)
+        out["call"].append({"clip": f"line_{token}", "url": f"/api/voice/{pack_name(voice)}/line/{token}", "text": text,
+                            "spoken": spoken(text, voice), "mood": mood, "dynamic": True})
+    return out
 
 
 def new_throw(conn, player_id, die1, die2, back_wall, meta, source="manual", camera_read=""):
@@ -193,37 +215,38 @@ def insert_throw(conn, player_id, throw, table_before=None, net=None, note=""):
 
 
 def settle(conn, player_id, table, throw, voice):
-    """Roll the table for this throw; returns (note, net, last-roll panel, stickman pieces)."""
+    """Roll the table for this throw; returns (note, net, last-roll panel, stickman pieces, the engine's result)."""
     result = table.roll(throw["die1"], throw["die2"]) if throw["back_wall"] else table.no_roll()
     note, panel = describe(result, throw)
     count = conn.execute("SELECT COUNT(*) FROM throws WHERE player_id = ?", (player_id,)).fetchone()[0]
-    pieces = stickman_call(result, count, voice) if voice in VOICES else []
-    return note, (result["net"] if result else 0), panel, pieces
+    pieces = stickman_call(result, count, voice if voice in VOICES else DEFAULT_VOICE)
+    return note, (result["net"] if result else 0), panel, pieces, result
 
 
 def roll(user_id, player_id, die1, die2, back_wall, meta, voice=DEFAULT_VOICE, buy_in=DEFAULT_BUY_IN,
-         source="manual", camera_read=""):
-    """Settle a roll on the table. Returns the stickman's words and the throw's id."""
+         source="manual", camera_read="", premium=False, personal=True):
+    """Settle a roll on the table. Returns what the page plays (see speech) and the throw's id."""
     with db.transaction() as conn:
         row = player_row(conn, user_id, player_id)
         table = load_table(row, buy_in)
         before = table.snapshot()
         throw = new_throw(conn, player_id, die1, die2, back_wall, meta, source, camera_read)
-        note, net, panel, pieces = settle(conn, player_id, table, throw, voice)
+        note, net, panel, pieces, result = settle(conn, player_id, table, throw, voice)
         insert_throw(conn, player_id, throw, before, net, note)
         save_table(conn, player_id, table, panel)
-    return call_pieces(pieces, voice), throw["throw_id"]
+        said = speech(pieces, voice, result, row["name"], premium, personal)
+    return said, throw["throw_id"]
 
 
 def log_throw(user_id, player_id, die1, die2, back_wall, meta, voice=DEFAULT_VOICE, source="manual", camera_read=""):
     """A tracker throw: logged with no bets settled. The stickman calls it from the throw log, as the tracker does.
-    Returns the stickman's words and the throw's id."""
+    Returns what the page plays (see speech) and the throw's id."""
     with db.transaction() as conn:
         player_row(conn, user_id, player_id)
         throw = new_throw(conn, player_id, die1, die2, back_wall, meta, source, camera_read)
         insert_throw(conn, player_id, throw)
         throws = player_throws(conn, player_id)
-    return call_pieces(croupier_call(throws, voice) if voice in VOICES else [], voice), throw["throw_id"]
+    return speech(croupier_call(throws, voice if voice in VOICES else DEFAULT_VOICE), voice), throw["throw_id"]
 
 
 def last_throw(conn, player_id):
@@ -231,10 +254,10 @@ def last_throw(conn, player_id):
                         (player_id,)).fetchone()
 
 
-def fix_last(user_id, player_id, die1, die2, voice=DEFAULT_VOICE):
+def fix_last(user_id, player_id, die1, die2, voice=DEFAULT_VOICE, premium=False, personal=True):
     """Put the right dice on the last throw. A craps roll is taken back and settled again with them."""
     with db.transaction() as conn:
-        player_row(conn, user_id, player_id)
+        row = player_row(conn, user_id, player_id)
         last = last_throw(conn, player_id)
         if last is None:
             raise BetError("Nothing to fix yet.")
@@ -243,19 +266,20 @@ def fix_last(user_id, player_id, die1, die2, voice=DEFAULT_VOICE):
         throw.update(die1=die1, die2=die2, total=die1 + die2, source="corrected")
         if last["table_before"]:
             table = CrapsTable.from_dict(json.loads(last["table_before"]))
-            note, net, panel, pieces = settle(conn, player_id, table, throw, voice)
+            note, net, panel, pieces, result = settle(conn, player_id, table, throw, voice)
             save_table(conn, player_id, table, panel)
             message = (f"Fixed last roll: {old} -> {die1}-{die2}. Bets are back where they were before it, "
                        "then settled again.")
         else:
-            note, net, pieces = last["note"], last["net"], None
+            note, net, pieces, result = last["note"], last["net"], None, None
             message = f"Fixed last throw: {old} -> {die1}-{die2}"
         conn.execute("UPDATE throws SET die1 = ?, die2 = ?, total = ?, source = 'corrected', net = ?, note = ? "
                      "WHERE id = ?", (die1, die2, die1 + die2, net, note, last["id"]))
         if pieces is None:
             throws = player_throws(conn, player_id)
-            pieces = croupier_call(throws, voice) if voice in VOICES else []
-    return message, call_pieces(pieces, voice)
+            pieces = croupier_call(throws, voice if voice in VOICES else DEFAULT_VOICE)
+        said = speech(pieces, voice, result, row["name"], premium, personal)
+    return message, said
 
 
 def undo(user_id, player_id):

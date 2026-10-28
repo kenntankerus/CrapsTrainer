@@ -74,6 +74,20 @@ CREATE TABLE IF NOT EXISTS throws (
     locked INTEGER NOT NULL DEFAULT 0           -- imported or claimed: kept, but Undo and Fix last pass it by
 );
 CREATE INDEX IF NOT EXISTS throws_player ON throws(player_id, id);
+-- the stickman's personal calls ("Pay the hard eight, forty-five dollars"), made when first played
+CREATE TABLE IF NOT EXISTS lines (
+    token TEXT PRIMARY KEY,
+    voice TEXT NOT NULL,
+    text TEXT NOT NULL,
+    mood TEXT NOT NULL,
+    engine TEXT NOT NULL,
+    created REAL NOT NULL
+);
+-- characters sent to ElevenLabs each day, for CRAPS_ELEVENLABS_DAILY_CHARS
+CREATE TABLE IF NOT EXISTS tts_usage (
+    day TEXT PRIMARY KEY,
+    chars INTEGER NOT NULL
+);
 """
 
 _local = threading.local()

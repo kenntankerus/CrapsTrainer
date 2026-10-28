@@ -141,6 +141,14 @@ def buy_in_of(user):
     return value if isinstance(value, int) and 0 < value <= MAX_BUY_IN else tables.DEFAULT_BUY_IN
 
 
+def premium(user):
+    return user["email"] in config.PREMIUM_USERS
+
+
+def personal_of(user):
+    return settings_for(user).get("personal", True) is not False
+
+
 def voice_of(user):
     value = settings_for(user).get("voice", DEFAULT_VOICE)
     return value if value in VOICES else "Off"
@@ -282,6 +290,7 @@ class Settings(BaseModel):
     hop: Optional[str] = None
     buy_in: Optional[int] = None
     sounds: Optional[bool] = None
+    personal: Optional[bool] = None
     back_wall: Optional[bool] = None
     dice_set: Optional[str] = Field(None, max_length=40)
     setup: Optional[str] = None
@@ -461,23 +470,25 @@ def roll(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
     meta = {"dice_set": body.dice_set.strip(), "position": body.position.strip(), "local_time": body.local_time}
     camera_read, crops = camera.service.take_unclear(user["id"], player_id)     # dice the camera just couldn't read
     if body.mode == "tracker":
-        call, throw_id = tables.log_throw(user["id"], player_id, body.die1, body.die2, body.back_wall, meta,
+        said, throw_id = tables.log_throw(user["id"], player_id, body.die1, body.die2, body.back_wall, meta,
                                           voice_of(user), camera_read=camera_read)
         message = f"Logged {body.die1}-{body.die2} on {meta['dice_set'] or 'Unnamed'}"
     else:
-        call, throw_id = tables.roll(user["id"], player_id, body.die1, body.die2, body.back_wall, meta,
-                                     voice_of(user), buy_in_of(user), camera_read=camera_read)
+        said, throw_id = tables.roll(user["id"], player_id, body.die1, body.die2, body.back_wall, meta,
+                                     voice_of(user), buy_in_of(user), camera_read=camera_read,
+                                     premium=premium(user), personal=personal_of(user))
         message = ""
     camera.save_crops(throw_id, crops)
     changed(user, request, player_id)
-    return {"message": message, "call": call, "voice": voice_of(user)}
+    return {"message": message, **said}
 
 
 @app.post("/api/players/{player_id}/fix")
 def fix(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
-    message, call = tables.fix_last(user["id"], player_id, body.die1, body.die2, voice_of(user))
+    message, said = tables.fix_last(user["id"], player_id, body.die1, body.die2, voice_of(user), premium(user),
+                                    personal_of(user))
     changed(user, request, player_id)
-    return {"message": message, "call": call, "voice": voice_of(user)}
+    return {"message": message, **said}
 
 
 @app.post("/api/players/{player_id}/undo")
@@ -523,7 +534,8 @@ def binding_of(body, user):
     tables.player_row(db.connect(), user["id"], body.player_id)
     return {"player_id": body.player_id, "mode": "tracker" if body.mode == "tracker" else "table",
             "back_wall": body.back_wall, "dice_set": body.dice_set.strip(), "position": body.position.strip(),
-            "tz_offset": body.tz_offset, "voice": voice_of(user), "buy_in": buy_in_of(user)}
+            "tz_offset": body.tz_offset, "voice": voice_of(user), "buy_in": buy_in_of(user),
+            "premium": premium(user), "personal": personal_of(user)}
 
 
 @app.get("/api/camera")
@@ -594,11 +606,45 @@ def camera_train(user=Depends(camera_user)):
 
 
 # ---------------------------------------------------------------------- the stickman's voice
-@app.get("/api/voice/{slug}/{clip}.mp3")
-async def voice_clip(slug: str, clip: str, user=Depends(signed_in)):
-    path = await voice.clip_path(slug, clip)
+@app.get("/api/voice/{slug}/clips")
+def voice_clips(slug: str, user=Depends(signed_in)):
+    """Every fixed line of a voice, for the page to fetch ahead of time."""
+    name = voice.SLUGS.get(slug)
+    if name is None:
+        raise HTTPException(404, "No such voice.")
+    return {"urls": [f"/api/voice/{slug}/{clip}" for clip in voice.clip_names(name)], "engines": voice.engines(name)}
+
+
+@app.get("/api/voice/{slug}/line/{token}")
+async def voice_line(slug: str, token: str, user=Depends(signed_in)):
+    path = await voice.line_path(slug, token)
     if path is None:
         raise HTTPException(404, "No recording of that line.")
+    return FileResponse(path, media_type=voice.media_type(path), headers={"Cache-Control": "private, max-age=604800"})
+
+
+@app.get("/api/voice/{slug}/{clip}")
+async def voice_clip(slug: str, clip: str, user=Depends(signed_in)):
+    path = await voice.clip_path(slug, clip.removesuffix(".mp3"))
+    if path is None:
+        raise HTTPException(404, "No recording of that line.")
+    return FileResponse(path, media_type=voice.media_type(path), headers={"Cache-Control": "private, max-age=604800"})
+
+
+from .make_sounds import SOUNDS  # noqa: E402
+
+
+@app.get("/api/sounds")
+def sounds(user=Depends(signed_in)):
+    """The recorded room and crowd sounds there are (made by python -m web.make_sounds)."""
+    return {"sounds": [n for n in SOUNDS if os.path.isfile(os.path.join(config.SOUND_DIR, n + ".mp3"))]}
+
+
+@app.get("/api/sounds/{name}")
+def sound(name: str, user=Depends(signed_in)):
+    path = os.path.join(config.SOUND_DIR, name + ".mp3")
+    if name not in SOUNDS or not os.path.isfile(path):
+        raise HTTPException(404, "No such sound.")
     return FileResponse(path, media_type="audio/mpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
