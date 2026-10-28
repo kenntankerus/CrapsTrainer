@@ -37,7 +37,7 @@ instead of sent: copy it into the browser.
 To bring in what the desktop apps logged (run from the repo folder, with the server stopped or running):
 
 ```
-python -m web.import_data kenntankerus@pm.me
+python -m web.import_data you@example.com
 ```
 
 That adds every row of `dice_throws.csv` to that account (the `kenn` rows are yours, any other user
@@ -121,7 +121,7 @@ Open https://craps.kbmoto.net and sign in. Then bring in your desktop history: c
 `CrapsTrainer` folder on the laptop and run
 
 ```
-docker compose run --rm -v "$PWD:/import:ro" web python -m web.import_data kenntankerus@pm.me \
+docker compose run --rm -v "$PWD:/import:ro" web python -m web.import_data you@example.com \
     --csv /import/dice_throws.csv --crops /import/dice_crops --game /import/craps_game_state.json
 ```
 
@@ -175,7 +175,7 @@ A pretend camera throws drawn dice every few seconds, read by the same `dice_vis
 
 ```
 CRAPS_CAMERA=0
-CRAPS_CAMERA_USERS=kenntankerus@pm.me
+CRAPS_CAMERA_USERS=you@example.com
 COMPOSE_FILE=docker-compose.yml:docker-compose.camera.yml
 ```
 
