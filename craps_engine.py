@@ -97,7 +97,7 @@ class CrapsTable:
         self.bought_in = bankroll
         self.bets = {}                          # spot -> {"amount": cents, "odds": cents}
         self.point = None
-        self.work_on_comeout = False            # place, buy, lay and hardway bets are off on the come-out unless this is on
+        self.work_on_comeout = False            # "all bets on": place, buy, lay, hardways and come odds work on the come-out
         self.shooter_rolls = 0
         self.last_run = None
         self.last_total = None
@@ -134,6 +134,11 @@ class CrapsTable:
 
     def working(self, spot):
         if spot.startswith(("place_", "buy_", "lay_", "hard_")):
+            return self.point is not None or self.work_on_comeout
+        return True
+
+    def odds_working(self, spot):
+        if spot.startswith("come_"):
             return self.point is not None or self.work_on_comeout
         return True
 
@@ -297,15 +302,16 @@ class CrapsTable:
                     lose(spot)
 
             elif kind == "come" and rest:
-                # a come bet sitting on its number; its odds are off on the come-out
+                # a come bet sitting on its number; its odds are off on the come-out unless all bets are on
                 n, odds = int(rest), self.bets[spot]["odds"]
+                odds_off = not self.odds_working(spot)
                 if total == n:
-                    if comeout:
+                    if odds_off:
                         win(spot, amount, stays=False, note="wins (odds were off)" if odds else "wins")
                     else:
                         win(spot, amount + odds_win(n, odds), stays=False)
                 elif total == 7:
-                    lose(spot, keep_odds=comeout)
+                    lose(spot, keep_odds=odds_off)
 
             elif kind == "dc" and rest:
                 n = int(rest)

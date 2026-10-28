@@ -374,7 +374,7 @@ class CrapsGame:
         hop_box.pack(side="left", padx=5)
         hop_box.bind("<<ComboboxSelected>>", lambda e: self.refresh())
         self.comeout_var = tk.BooleanVar(value=self.table.work_on_comeout)
-        ttk.Checkbutton(options, text="Place, buy, lay & hardways work on the come-out", variable=self.comeout_var,
+        ttk.Checkbutton(options, text="All bets on during the come-out", variable=self.comeout_var,
                         command=self.toggle_comeout).pack(side="left", padx=(16, 0))
         ttk.Checkbutton(options, text="Chip sounds", variable=self.sounds_var, command=self.save_game).pack(
             side="left", padx=(16, 0))
@@ -544,7 +544,7 @@ class CrapsGame:
                     self.draw_chip(ox1 - 21, (oy0 + oy1) / 2, 13, bet["odds"])
                 else:
                     self.draw_chip(cx + 2 * radius + 6, cy, radius, bet["odds"],
-                                   off=spot.startswith("come_") and t.point is None)
+                                   off=not t.odds_working(spot))
         if hops:
             x0, y0, _, _ = ZONES["hop"]
             for i, line in enumerate(hops):
