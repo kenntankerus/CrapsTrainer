@@ -44,11 +44,13 @@ TWO_DICE_AREA = 7000            # a blob this big (1920-wide picture) is two tou
 SPLIT_ASPECT = 1.6              # a blob this much longer than wide is treated as two touching dice
 WHITE_LEVEL = 180              # how bright a spot must be to count as a pip
 
-EXPOSURE = -2                   # camera brightness; None lets the camera choose
+EXPOSURE = -2                   # camera brightness; None lets the camera choose. Each step darker doubles the frame rate
+GAIN = None                     # brightens a short exposure back up, with a little noise (Brio: 0-255); None keeps the camera's own
 FOCUS = None                    # lens focus with autofocus off (Brio: 0-255, lower = farther away); None keeps the camera's own
 FRAME_WIDTH, FRAME_HEIGHT = 1920, 1080
 
 STILL_SECONDS = 0.35            # how long the dice must sit still before the throw is reported
+WARMUP_SECONDS = 1.5            # nothing is read this soon after the camera starts: the lens is still moving to FOCUS
 READ_AFTER = 0.12               # start reading the dice this long after they stop (earlier frames often still rock)
 MIN_VOTE_FRAMES = 4             # never report on fewer readings than this, even on a slow camera
 MOTION_THRESHOLD = 1.5          # how much picture change counts as "moving"
@@ -75,7 +77,7 @@ SETTINGS_FILE = os.path.join(HERE, "dice_settings.json")
 _SAVED_NAMES = {"hue_low": "HUE_LOW", "hue_high": "HUE_HIGH", "sat_low": "SAT_LOW",
                 "val_low": "VAL_LOW", "min_die_area": "MIN_DIE_AREA",
                 "white_level": "WHITE_LEVEL", "exposure": "EXPOSURE", "roi": "ROI", "focus": "FOCUS",
-                "two_dice_area": "TWO_DICE_AREA"}
+                "two_dice_area": "TWO_DICE_AREA", "gain": "GAIN"}
 
 
 def _load_saved_settings():
@@ -398,6 +400,8 @@ class DiceCamera:
         if EXPOSURE is not None:
             cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)     # 0.25 = manual on Windows cameras
             cap.set(cv2.CAP_PROP_EXPOSURE, EXPOSURE)
+            if GAIN is not None:
+                cap.set(cv2.CAP_PROP_GAIN, GAIN)
         self._cap = cap
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -424,6 +428,7 @@ class DiceCamera:
         dice = []
         frame_number = 0
         fps_start, fps_frames = time.perf_counter(), 0
+        started = fps_start
 
         while not self._stop.is_set():
             ok, frame = cap.read()
@@ -450,6 +455,7 @@ class DiceCamera:
                 moving = (float(np.mean(diff)) > MOTION_THRESHOLD
                           or cv2.countNonZero(cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]) > MOTION_PIXELS)
             previous = small
+            moving = moving or now - started < WARMUP_SECONDS
 
             if moving:
                 still_since = None

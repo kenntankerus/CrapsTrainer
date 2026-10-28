@@ -5,8 +5,9 @@
   "val_low": 15,
   "min_die_area": 1000,
   "white_level": 180,
-  "exposure": -2,
+  "exposure": -3,
   "roi": null,
   "focus": 15,
-  "two_dice_area": 5000
+  "two_dice_area": 5000,
+  "gain": 0
 }

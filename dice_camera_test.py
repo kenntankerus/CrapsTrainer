@@ -33,7 +33,7 @@ CAMERA_INDEX = int(sys.argv[1]) if len(sys.argv) > 1 else 1
 STILL_FRAMES_NEEDED = 12      # frames of no movement before we trust a reading
 MOTION_THRESHOLD = 1.5        # average pixel change that counts as "moving"
 PREVIEW_W, PREVIEW_H = 800, 450       # size of the picture on screen (make smaller if it runs off your screen)
-EXPOSURE = -2     # once the - and = keys find a good brightness, type that printed number here (e.g. -6) so it's used every run
+EXPOSURE = dv.EXPOSURE     # starts from dice_settings.json; the - and = keys change it, S saves it
 FRAME_WIDTH, FRAME_HEIGHT = 1920, 1080   # 1080p. For 4K use 3840, 2160 (needs a USB 3 port)
 
 WINDOW = "Dice camera test"
@@ -111,6 +111,8 @@ def main():
         cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
         cap.set(cv2.CAP_PROP_EXPOSURE, EXPOSURE)
         exposure = EXPOSURE
+        if dv.GAIN is not None:
+            cap.set(cv2.CAP_PROP_GAIN, dv.GAIN)
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"Camera is running at {actual_w} x {actual_h}")
