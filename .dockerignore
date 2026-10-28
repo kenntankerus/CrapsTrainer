@@ -1,0 +1,15 @@
+.git
+.env
+data
+dice_crops
+voice_cache
+sounds
+unclear_frames
+tests
+__pycache__
+*.pyc
+*.png
+!web/static/*.png
+dice_throws.csv
+*.json
+!web/static/*.webmanifest

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a281d">
+  <meta name="color-scheme" content="dark">
+  <title>Craps Trainer</title>
+  <meta name="description" content="Play a craps table with your own dice and track how your throws compare to fair dice.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="/static/icon.svg" alt="" width="28" height="28"><span>Craps Trainer</span></div>
+    <nav class="tabs" id="tabs" hidden>
+      <button type="button" data-tab="table" aria-pressed="true">Table</button>
+      <button type="button" data-tab="tracker" aria-pressed="false">Tracker</button>
+    </nav>
+    <div class="who" id="who" hidden>
+      <label class="sr" for="player">Player</label>
+      <select id="player" title="Who's throwing"></select>
+      <button type="button" class="icon" id="menu-button" aria-label="Menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- signing in -->
+  <section class="gate" id="signin" hidden>
+    <div class="card narrow">
+      <h1>Sign in</h1>
+      <p class="muted">Enter your email and we'll send you a link. No password: the link signs you in, and the first one makes your account.</p>
+      <form id="signin-form">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com">
+        <div id="turnstile-box"></div>
+        <button type="submit" class="gold wide">Email me a sign-in link</button>
+      </form>
+      <p class="status" id="signin-status" role="status"></p>
+      <p class="small muted"><a href="/privacy">What we keep about you</a></p>
+    </div>
+  </section>
+
+  <section class="gate" id="verify" hidden>
+    <div class="card narrow">
+      <h1 id="verify-title">Sign in</h1>
+      <p id="verify-text" class="muted"></p>
+      <button type="button" class="gold wide" id="verify-button" hidden>Sign in</button>
+      <p class="status" id="verify-status" role="status"></p>
+      <p><a href="/" id="verify-back" hidden>Ask for a new link</a></p>
+    </div>
+  </section>
+
+  <section class="gate" id="naming" hidden>
+    <div class="card narrow">
+      <h1>What should the table call you?</h1>
+      <form id="naming-form">
+        <label for="your-name">Your name</label>
+        <input id="your-name" required maxlength="30" autocomplete="nickname">
+        <button type="submit" class="gold wide">Take a seat</button>
+      </form>
+      <p class="status" id="naming-status" role="status"></p>
+    </div>
+  </section>
+
+  <!-- the app -->
+  <main id="main" hidden>
+    <section class="card controls" aria-label="Throw settings">
+      <div class="field-group">
+        <label for="dice-set">Dice set</label>
+        <select id="dice-set"></select>
+        <select id="setup" title="Hardway set: face up - face toward you (6-2 = sixes up, twos toward you)" hidden></select>
+      </div>
+      <div class="field-group">
+        <label for="position">Position</label>
+        <select id="position"></select>
+      </div>
+      <div class="field-group">
+        <label for="voice">Stickman</label>
+        <select id="voice"></select>
+      </div>
+      <label class="toggle"><input type="checkbox" id="back-wall" checked> Hit back wall</label>
+    </section>
+
+    <section class="card entry" aria-label="Dice">
+      <div class="slots">
+        <button type="button" class="slot" id="slot-0" aria-label="Left die"></button>
+        <button type="button" class="slot" id="slot-1" aria-label="Right die"></button>
+        <button type="button" class="gold roll" id="roll-button" disabled>Roll</button>
+      </div>
+      <div class="pad" id="pad" aria-label="Tap the dice: left die first"></div>
+      <div class="entry-actions">
+        <button type="button" id="fix-button" title="Put the dice above on the last throw (F2)">Fix last</button>
+        <button type="button" id="undo-button" title="Take back the last throw (Ctrl+Z)">Undo</button>
+        <span class="hint muted" id="entry-hint">Tap the two dice (left first), or type them, then Roll.</span>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <!-- the craps table -->
+    <section id="tab-table">
+      <div class="table-grid">
+        <div class="table-main">
+          <div class="layout-wrap card" id="layout-wrap">
+            <svg id="layout" role="img" aria-label="Craps layout: tap a spot to bet the chosen chip"></svg>
+          </div>
+          <div class="card under">
+            <div class="rack" id="rack" aria-label="Chips"></div>
+            <p class="money" id="money"></p>
+            <div class="row wrap">
+              <label class="inline">Hop bet on <select id="hop"></select></label>
+              <label class="toggle"><input type="checkbox" id="comeout"> All bets on during the come-out</label>
+              <label class="toggle"><input type="checkbox" id="sounds" checked> Chip sounds</label>
+            </div>
+            <div class="row wrap">
+              <button type="button" id="take-all">Take all down</button>
+              <label class="inline">Buy-in <select id="buy-in"></select></label>
+              <button type="button" id="rebuy">Rebuy</button>
+              <button type="button" id="reset">Reset bankroll</button>
+              <button type="button" class="gold" id="stats-button">Run stats</button>
+            </div>
+            <p class="small muted" id="layout-help"></p>
+          </div>
+        </div>
+        <aside class="table-side">
+          <div class="card">
+            <h2>Last roll</h2>
+            <div class="last" id="last-roll"></div>
+            <p class="muted" id="last-state"></p>
+            <ul class="lines" id="payouts"></ul>
+          </div>
+          <div class="card">
+            <h2>Rolls</h2>
+            <ul class="lines" id="rolls"></ul>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- the throw tracker -->
+    <section id="tab-tracker" hidden>
+      <div class="tracker-grid">
+        <div class="card">
+          <h2>Last throw</h2>
+          <div class="last" id="tracker-last"></div>
+          <div class="shooter" id="shooter"></div>
+        </div>
+        <div class="card">
+          <h2>Small / Tall / All</h2>
+          <div id="bonus"></div>
+        </div>
+        <div class="card">
+          <h2>Recent throws</h2>
+          <ul class="lines" id="recent"></ul>
+          <p class="small muted" id="accuracy"></p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row wrap">
+          <h2 class="inline-h">Compared by</h2>
+          <select id="compare"></select>
+          <span class="small muted" id="fair"></span>
+        </div>
+        <div class="scroll-x"><table class="stats" id="stats-table"></table></div>
+      </div>
+      <div class="card">
+        <h2 id="chart-title">Totals</h2>
+        <p class="small muted">Bars are yours, red lines are fair dice.</p>
+        <svg id="chart" viewBox="0 0 490 185" role="img" aria-label="Totals chart"></svg>
+      </div>
+    </section>
+  </main>
+
+  <!-- dialogs -->
+  <dialog id="menu">
+    <form method="dialog" class="dialog-body">
+      <h2>Account</h2>
+      <p class="muted" id="menu-email"></p>
+      <div class="stack">
+        <button type="button" id="menu-name">Change my name</button>
+        <button type="button" id="menu-players">Players at my table</button>
+        <a class="button" href="/api/export.csv" download>Download my throws (CSV)</a>
+        <a class="button" href="/privacy" target="_blank" rel="noopener">What we keep</a>
+        <button type="button" id="menu-signout">Sign out</button>
+        <button type="button" id="menu-signout-all">Sign out on every device</button>
+        <button type="button" class="danger" id="menu-delete">Delete my account</button>
+      </div>
+      <div class="dialog-actions"><button value="close">Close</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="players-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Players at your table</h2>
+      <p class="small muted">Guests play on your screen with their own bankroll and stats. Send a guest their history and it moves to an account of their own.</p>
+      <ul class="players" id="players-list"></ul>
+      <div class="row">
+        <input id="guest-name" maxlength="30" placeholder="Guest's name" aria-label="Guest's name">
+        <button type="button" class="gold" id="add-guest">Add guest</button>
+      </div>
+      <p class="status" id="players-status" role="status"></p>
+      <div class="dialog-actions"><button value="close">Done</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="stats-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Run stats</h2>
+      <div id="run-summary"></div>
+      <h3>By bet</h3>
+      <table class="stats" id="by-bet"></table>
+      <div class="dialog-actions"><button value="close">Close</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="sheet">
+    <form method="dialog" class="dialog-body">
+      <h2 id="sheet-title"></h2>
+      <div class="stack" id="sheet-actions"></div>
+      <div class="dialog-actions"><button value="close">Cancel</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="ask">
+    <form method="dialog" class="dialog-body" id="ask-form">
+      <h2 id="ask-title"></h2>
+      <p id="ask-text" class="muted"></p>
+      <input id="ask-input" hidden>
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="ok" class="gold" id="ask-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="ghost-chip" id="ghost" hidden></div>
+</body>
+</html>

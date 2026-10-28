@@ -1,0 +1,21 @@
+# docker compose up -d --build     starts the web server and the Cloudflare Tunnel that puts it online.
+# Settings come from .env (copy .env.example). See web/README.md.
+services:
+  web:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./voice_packs:/app/voice_packs:ro     # recordings made with make_voice_pack.py, if any
+    ports:
+      - "127.0.0.1:8000:8000"      # only this machine can reach it directly; everyone else comes through the tunnel
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - web
+    restart: unless-stopped

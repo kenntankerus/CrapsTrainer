@@ -15,3 +15,7 @@ tracker_state.json
 craps_game_state.json
 sounds/
 voice_packs/
+
+# web server
+data/
+.env
