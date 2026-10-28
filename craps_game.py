@@ -530,6 +530,9 @@ class CrapsGame:
                 cx = x0 + radius + 20
             elif spot.startswith("place_"):
                 cx, cy = x0 + radius + 4, y0 + radius + 4
+            elif spot in BONUS_PAYS:
+                radius = 11             # all Make 'Em All's box has room for, and the three should match
+                cx = x1 - radius - 3
             elif y1 - y0 > x1 - x0:
                 cy = y1 - radius - 8
             elif y1 - y0 <= 60 and x1 - x0 <= 160:
