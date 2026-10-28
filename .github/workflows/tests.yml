@@ -1,8 +1,9 @@
-# Runs the web server's tests on every push and pull request.
+# Runs the web server's tests on pull requests and on pushes to main.
 name: Tests
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
