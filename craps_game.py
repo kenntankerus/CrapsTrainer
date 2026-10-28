@@ -2,7 +2,8 @@
 Craps Table  (sister app to dice_tracker_v2.py)
 -----------------------------------------------
 Play a full craps table with your own throws. Pick a chip, click a spot on the
-layout to bet it, right-click to take a bet down. Click a come bet on its
+layout to bet it, right-click to take a bet down, or drag a bet to another
+spot to move it. Click a come bet on its
 number (or the odds box under the line) to add odds.
 
   * Camera on:  throws are read from the webcam, exactly as in the tracker.
@@ -329,7 +330,7 @@ class CrapsGame:
         voice_box.pack(side="left", padx=5)
         voice_box.bind("<<ComboboxSelected>>", lambda e: (self.save_state(), self.speaker.prepare(self.voice_var.get())))
 
-        self.status_var = tk.StringVar(value="Click or drag a chip onto the layout to bet. Right-click a bet, or drag it to the rack, to take it down.")
+        self.status_var = tk.StringVar(value="Click or drag a chip onto the layout to bet. Drag a bet to move it, or to the rack to take it down.")
         ttk.Label(frame, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=1, column=0, columnspan=10, sticky="w", pady=(8, 0))
         self.show_setup_box()
@@ -593,21 +594,46 @@ class CrapsGame:
             return
         drag["window"].destroy()
         self.rack.configure(highlightbackground=CARD)
+        self.hover = None
+        to = self.zone_under(event.x_root, event.y_root)
         if self.over(self.rack, event.x_root, event.y_root):
             self.take_down_zone(drag["zone"])
+        elif to is not None and to != drag["zone"]:
+            self.slide_bet(drag["zone"], to)
+        else:
+            self.draw_layout()
+
+    def bet_zone(self, zone, cents):
+        """Bet cents on a zone (as odds, if it's an odds zone) and return the status line. Raises BetError."""
+        base = self.odds_base(zone)
+        if base:
+            self.table.add_odds(base, cents)
+            return f"Odds on {spot_name(base)}: {money(self.table.bets[base]['odds'])}"
+        spot = hop_spot(self.hop_var.get()) if zone == "hop" else zone
+        self.table.bet(spot, cents)
+        return f"{spot_name(spot)}: {money(self.table.bets[spot]['amount'])}"
 
     def place_chip(self, zone):
-        base = self.odds_base(zone)
         try:
-            if base:
-                self.table.add_odds(base, self.chip)
-                self.status_var.set(f"Odds on {spot_name(base)}: {money(self.table.bets[base]['odds'])}")
-            else:
-                spot = hop_spot(self.hop_var.get()) if zone == "hop" else zone
-                self.table.bet(spot, self.chip)
-                self.status_var.set(f"{spot_name(spot)}: {money(self.table.bets[spot]['amount'])}")
+            self.status_var.set(self.bet_zone(zone, self.chip))
             self.clack()
         except BetError as error:
+            self.status_var.set(str(error))
+            self.root.bell()
+        self.after_change()
+
+    def slide_bet(self, zone, to):
+        """Move the bet in one zone to another, for a chip that went down in the wrong place."""
+        before = self.table.snapshot()
+        try:
+            spot, is_odds, cents = self.bet_in_zone(zone)
+            if is_odds:
+                raise BetError("Odds can't slide to another bet. Drag them to the rack to take them down.")
+            self.table.take_down(spot)
+            self.status_var.set(f"Moved {money(cents)} from {spot_name(spot)}. {self.bet_zone(to, cents)}")
+            self.clack()
+        except BetError as error:
+            self.table.restore(before)      # a refused move leaves the bet where it was
             self.status_var.set(str(error))
             self.root.bell()
         self.after_change()
@@ -658,7 +684,7 @@ class CrapsGame:
             self.drag = {"start": (event.x_root, event.y_root), "window": None}
 
     def drag_chip(self, event):
-        """Drags go both ways: a rack chip onto the layout, or a bet on the layout back down to the rack."""
+        """A rack chip onto the layout, or a bet on the layout to another spot or back down to the rack."""
         drag = self.drag
         if drag is None:
             return
@@ -676,8 +702,9 @@ class CrapsGame:
         if from_table:
             over = self.over(self.rack, event.x_root, event.y_root)
             self.rack.configure(highlightbackground=GOLD if over else CARD)
-            return
         zone = self.zone_under(event.x_root, event.y_root)
+        if from_table and zone == drag["zone"]:
+            zone = None
         if zone != self.hover:
             self.hover = zone
             self.draw_layout()
