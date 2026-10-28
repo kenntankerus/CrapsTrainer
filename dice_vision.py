@@ -373,7 +373,7 @@ class DiceCamera:
         self._cap = None
         self._lock = threading.Lock()
         self._preview = None
-        self._last_report = None      # (reading, centres) of the last thing we reported
+        self._last_report = None      # die centres of the last thing we reported
 
     @property
     def model_status(self):
@@ -499,13 +499,13 @@ class DiceCamera:
             self._last_report = None    # empty carpet: the next throw is always new
             return
 
-        # The same dice sitting in the same spot (say, after a hand passed over them)
-        if self._last_report is not None and self._last_report[0] == reading:
-            old = self._last_report[1]
-            if len(old) == len(centres) and all(
-                    abs(a[0] - b[0]) < 12 and abs(a[1] - b[1]) < 12 for a, b in zip(old, centres)):
-                return
-        self._last_report = (reading, centres)
+        # Dice still where they were last reported are the same throw, seen again after a hand or shadow
+        # passed over them. Hard-to-read dice often read differently the second time, and reporting that
+        # would log an extra roll, which F2 would then fix instead of the misread one.
+        if self._last_report is not None and all(
+                any(abs(a[0] - b[0]) < 20 and abs(a[1] - b[1]) < 20 for b in self._last_report) for a in centres):
+            return
+        self._last_report = centres
 
         if len(reading) == 2 and None not in reading and agreement >= AGREEMENT_NEEDED:
             self.events.put(("throw", {"dice": reading, "crops": crops}))
