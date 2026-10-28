@@ -291,6 +291,14 @@ def split_touching(contour, shape, two_dice_area):
     return pieces or [contour]
 
 
+def die_shaped(contour, two_dice_area):
+    """True if a blob is the size and shape of one die seen from above: square-ish, solid, not too big."""
+    area = cv2.contourArea(contour)
+    (_, (w, h), _) = cv2.minAreaRect(contour)
+    solidity = area / max(cv2.contourArea(cv2.convexHull(contour)), 1)
+    return area < two_dice_area and max(w, h) / max(min(w, h), 1) < SPLIT_ASPECT and solidity > 0.7
+
+
 def find_dice(frame):
     """Return one reading (see read_die) per die in the frame, left to right."""
     scale = frame.shape[1] / REFERENCE_WIDTH            # 1.0 for a 1920-wide picture
@@ -311,12 +319,14 @@ def find_dice(frame):
 
     contours, _ = cv2.findContours(green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     dice = []
+    two_area = TWO_DICE_AREA * scale * scale
     for c in contours:
         c = c + np.array([x0, y0], dtype=c.dtype)
         if cv2.contourArea(c) >= min_area:
-            dice.extend(read_die(frame, part) for part in split_touching(c, frame.shape[:2], TWO_DICE_AREA * scale * scale))
-    # A real die always shows at least one pip; a pipless blob is a patch of carpet that passed the green test
-    dice = [d for d in dice if d["pips"] > 0]
+            dice.extend(read_die(frame, part) for part in split_touching(c, frame.shape[:2], two_area))
+    # A pipless blob is usually carpet that passed the green test, but glare can swallow every pip on a
+    # real die. Dropping that die turns the throw into "I see 1 die", so die-shaped blobs are kept for the model.
+    dice = [d for d in dice if d["pips"] > 0 or die_shaped(d["contour"], two_area)]
     dice.sort(key=lambda d: cv2.boundingRect(d["contour"])[0])
     return dice
 
@@ -500,10 +510,9 @@ class DiceCamera:
         if len(reading) == 2 and None not in reading and agreement >= AGREEMENT_NEEDED:
             self.events.put(("throw", {"dice": reading, "crops": crops}))
             return
-        if len(reading) >= 2:       # fewer is usually a hand picking the dice up, not a missed throw
-            # PNG, because JPG's colour smearing makes carpet look green and hides what really went wrong
-            os.makedirs(UNCLEAR_DIR, exist_ok=True)
-            cv2.imwrite(os.path.join(UNCLEAR_DIR, datetime.now().strftime("%Y%m%d-%H%M%S.png")), frame)
+        # PNG, because JPG's colour smearing makes carpet look green and hides what really went wrong
+        os.makedirs(UNCLEAR_DIR, exist_ok=True)
+        cv2.imwrite(os.path.join(UNCLEAR_DIR, datetime.now().strftime("%Y%m%d-%H%M%S.png")), frame)
         if len(reading) != 2:
             self.events.put(("unclear", {
                 "message": f"Dice stopped but I see {len(reading)} dice - type the throw in",
