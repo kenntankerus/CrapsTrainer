@@ -4,7 +4,7 @@
   "sat_low": 10,
   "val_low": 15,
   "min_die_area": 1000,
-  "white_level": 180,
+  "white_level": 150,
   "exposure": -3,
   "roi": null,
   "focus": 15,

@@ -294,11 +294,12 @@ def split_touching(contour, shape, two_dice_area):
 
 
 def die_shaped(contour, two_dice_area):
-    """True if a blob is the size and shape of one die seen from above: square-ish, solid, not too big."""
+    """True if a blob is the size and shape of one die seen from above: square-ish, solid, not too big.
+    A die in a wall's shadow is only green around its edge, so "solid" has to allow a hollow middle."""
     area = cv2.contourArea(contour)
     (_, (w, h), _) = cv2.minAreaRect(contour)
     solidity = area / max(cv2.contourArea(cv2.convexHull(contour)), 1)
-    return area < two_dice_area and max(w, h) / max(min(w, h), 1) < SPLIT_ASPECT and solidity > 0.7
+    return area < two_dice_area and max(w, h) / max(min(w, h), 1) < SPLIT_ASPECT and solidity > 0.6
 
 
 def find_dice(frame):
