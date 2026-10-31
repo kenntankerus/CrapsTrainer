@@ -29,11 +29,15 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 - Merged: PR #1 (web app, accounts with emailed sign-in links, guests, table, tracker, camera on the server,
   live updates, Docker + Cloudflare Tunnel setup, CI) and PR #2 (voice engines: packs > ElevenLabs > Kokoro >
   edge-tts > browser; personal calls; the browser sound mix and crowd reactions).
-- Hosting plan: the old Windows laptop becomes an Ubuntu Server running Docker, at `craps.kbmoto.net` through a
-  Cloudflare Tunnel. Already set up online: Cloudflare DNS for kbmoto.net, the tunnel (route `craps.kbmoto.net`
-  -> `http://web:8000`), Turnstile, and Resend (domain verified). The laptop itself isn't set up yet.
-- Never tried for real: building the Docker image, edge-tts, ElevenLabs and Kokoro (cloud sessions couldn't
-  reach them), and the Brio webcam on Linux (needs tuning with the Tune window; Windows exposure -3 maps to 1250).
+- **Live at https://craps.kbmoto.net.** The server is the old Dell Inspiron 15-3567, now Ubuntu Server (booting
+  in Legacy BIOS mode, Secure Boot off; Dell's Auto OS Recovery is turned off) running the app with
+  `docker compose` from `~/src/CrapsTrainer`, behind a Cloudflare Tunnel (route `craps.kbmoto.net` -> `http://web:8000`).
+  `.env` there holds the Resend SMTP key, the Turnstile keys and the tunnel token. Sign-in emails work.
+- The Tkinter apps were confirmed to still run on Windows after the shared-logic refactor, before the wipe.
+- The desktop history is imported into the owner's account: 424 throws, the craps game's saved table and 716 dice
+  pictures. Tested on Android and on a PC.
+- Never tried for real yet: the Brio webcam on Linux (camera lines in `.env` still off; needs tuning with the
+  Tune window; Windows exposure -3 maps to 1250), edge-tts, ElevenLabs and Kokoro.
 
 ## Next up
 
@@ -45,9 +49,14 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
    - A Custom hold that is really a named set is logged under that name: match on what the set does (any
      hardway-set hold is Hardway; every rolling pair summing to 7 is All Sevens; left/right swapped is the same
      set). The owner will give the holds for 3-V, All Sevens, Parallel, Cross-Sixes and Axis.
-   - The 107 throws logged as "Hardway 6-2" were both dice sixes up, twos facing: relabel them
-     `Custom L6-2 R6-2` (or the named set it turns out to be), in `dice_throws.csv` and the import.
+   - The throws logged as "Hardway 6-2" (107 in the older copy of the log) were both dice sixes up, twos facing:
+     relabel them `Custom L6-2 R6-2` (or the named set it turns out to be). They're in the server's database now,
+     so the relabel is a one-off database update there, plus `dice_throws.csv` in the repo.
 2. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
-3. **When the laptop is set up:** follow `web/README.md` (Ubuntu, Docker, `.env`, `docker compose up -d --build`,
-   import the desktop data, tune the camera, `python -m web.get_voices`, `python -m web.make_sounds`).
+3. **Finish the server** (`web/README.md`): turn on the camera lines in `.env` and tune it, fetch the free voice
+   (`docker compose exec web python -m web.get_voices`, then `--prepare`), record room and crowd sounds
+   (`python -m web.make_sounds`, needs the ElevenLabs key), and add the backup crontab lines.
+4. **Make the server the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,
+   automatic login, Firefox started with `--kiosk https://craps.kbmoto.net`, screen blanking off, lid open.
+   Check memory with `free -h` first; the app itself keeps running in Docker underneath.
