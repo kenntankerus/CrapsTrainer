@@ -48,11 +48,13 @@ def send(to, subject, text, html=None):
 def sign_in_email(to, link, minutes):
     subject = f"Your {config.SITE_NAME} sign-in link"
     text = (f"Here is your link to sign in to {config.SITE_NAME}:\n\n{link}\n\n"
-            f"It works once, for the next {minutes} minutes. If you didn't ask for it, ignore this email: "
+            f"It works once, for the next {minutes} minutes, and you can open it on any device: it can sign in "
+            "this one or the one you asked from. If you didn't ask for it, ignore this email: "
             "nobody can sign in without the link.\n")
     html = (f"<p>Here is your link to sign in to {config.SITE_NAME}:</p>"
             f'<p><a href="{link}" style="font-size:18px;font-weight:bold">Sign in</a></p>'
-            f"<p>It works once, for the next {minutes} minutes. If you didn't ask for it, ignore this email: "
+            f"<p>It works once, for the next {minutes} minutes, and you can open it on any device: it can sign in "
+            "this one or the one you asked from. If you didn't ask for it, ignore this email: "
             "nobody can sign in without the link.</p>")
     send(to, subject, text, html)
 

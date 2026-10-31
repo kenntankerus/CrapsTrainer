@@ -55,6 +55,41 @@ def test_sign_in_link_works_once():
         assert c.post("/api/auth/verify", json={"token": token}).status_code == 400
 
 
+def test_link_opened_elsewhere_signs_in_the_asking_device():
+    with client() as asker, client() as phone:
+        r = asker.post("/api/auth/request", json={"email": "two@example.com"},
+                       headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0"})
+        code = r.json()["code"]
+        assert re.fullmatch(r"\d{4}", code)
+        assert asker.post("/api/auth/wait").json()["state"] == "waiting"
+        token = token_from_mail()
+        info = phone.get("/api/auth/link", params={"token": token}).json()
+        assert info["asked_on"] == {"device": "Firefox on Linux", "code": code}
+        r = phone.post("/api/auth/verify", json={"token": token, "where": "asker"})
+        assert r.status_code == 200 and r.json()["where"] == "asker"
+        assert phone.get("/api/me").status_code == 401             # the phone only approved it
+        assert asker.post("/api/auth/wait").json()["state"] == "signed_in"
+        assert me(asker)["email"] == "two@example.com"
+        assert asker.post("/api/auth/wait").json()["state"] == "signed_in"      # picked up once, then just signed in
+        with client() as third:                                    # nobody else can pick it up
+            assert third.post("/api/auth/wait").json()["state"] == "expired"
+
+
+def test_link_opened_on_the_asking_device_signs_in_here():
+    with client() as c:
+        c.post("/api/auth/request", json={"email": "same@example.com"})
+        token = token_from_mail()
+        assert "asked_on" not in c.get("/api/auth/link", params={"token": token}).json()
+        assert c.post("/api/auth/verify", json={"token": token}).status_code == 200
+        assert c.post("/api/auth/wait").json()["state"] == "signed_in"
+    with client() as asker, client() as other:                    # or the other device signs itself in instead
+        asker.post("/api/auth/request", json={"email": "here@example.com"})
+        assert other.post("/api/auth/verify", json={"token": token_from_mail(), "where": "here"}).status_code == 200
+        assert me(other)["email"] == "here@example.com"
+        assert asker.post("/api/auth/wait").json()["state"] == "expired"
+        assert asker.get("/api/me").status_code == 401
+
+
 def test_rate_limit_per_email(monkeypatch):
     monkeypatch.setattr(config, "LINKS_PER_EMAIL", 3)
     with client() as c:
@@ -95,6 +130,28 @@ def test_pass_line_and_undo():
     assert c.post(f"/api/players/{pid}/undo").status_code == 200
     view = c.get(f"/api/players/{pid}/table").json()
     assert view["point"] == 6 and {b["spot"]: b["odds"] for b in view["bets"]}["pass"] == 2500
+
+
+def test_virtual_roll_settles_bets_but_skips_the_stats():
+    c = signed_in_client("virtual@example.com")
+    pid = me(c)["players"][0]["id"]
+    c.post(f"/api/players/{pid}/change", json={"action": "bet", "zone": "field", "cents": 500})
+    r = c.post(f"/api/players/{pid}/virtual")
+    assert r.status_code == 200
+    die1, die2 = r.json()["dice"]
+    assert "Not counted" in r.json()["message"]
+    view = c.get(f"/api/players/{pid}/table").json()
+    assert view["last_roll"]["dice"] == [die1, die2] and view["rolls"][0]["virtual"] is True
+    assert view["last_roll"]["events"][0]["spot"] == "field"          # the field bet was settled
+    assert c.get(f"/api/players/{pid}/tracker").json()["recent"] == []
+    assert me(c)["players"][0]["throws"] == 0
+    assert c.get("/api/export.csv").text.strip().count("\n") == 0      # just the header
+    other = 1 if die1 != 1 else 2
+    c.post(f"/api/players/{pid}/fix", json={"die1": other, "die2": die2})
+    assert me(c)["players"][0]["throws"] == 0                       # fixed, and still virtual
+    assert c.post(f"/api/players/{pid}/undo").status_code == 200
+    view = c.get(f"/api/players/{pid}/table").json()                # the field bet is back up, as before the roll
+    assert view["bankroll"] == 9500 and [b["spot"] for b in view["bets"]] == ["field"]
 
 
 def test_fix_last_resettles():

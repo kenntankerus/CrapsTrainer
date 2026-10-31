@@ -11,6 +11,7 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import sys
 from contextlib import asynccontextmanager
@@ -215,20 +216,43 @@ class LinkRequest(BaseModel):
     turnstile: str = Field("", max_length=4096)
 
 
+def set_session(response, session):
+    response.set_cookie(auth.COOKIE, session, max_age=config.SESSION_DAYS * 86400, httponly=True,
+                        secure=config.SECURE_COOKIES, samesite="lax", path="/")
+
+
 @app.post("/api/auth/request")
-def request_link(body: LinkRequest, request: Request):
+def request_link(body: LinkRequest, request: Request, response: Response):
     email = auth.clean_email(body.email)
     ip = client_ip(request)
     if not auth.check_turnstile(body.turnstile, ip):
         raise auth.AuthError("The bot check didn't go through. Try again.")
-    token = auth.new_link(email, ip)
+    wait = auth.new_wait(request.cookies.get(auth.WAIT_COOKIE))
+    token, code = auth.new_link(email, ip, wait=wait, agent=request.headers.get("user-agent", ""))
     mail.sign_in_email(email, auth.link_url(token), config.LINK_MINUTES)
-    return {"ok": True, "message": f"A sign-in link is on its way to {email}. It works for {config.LINK_MINUTES} minutes."}
+    # only the sign-in calls need this, and it's only good while the link is
+    response.set_cookie(auth.WAIT_COOKIE, wait, max_age=config.LINK_MINUTES * 60, httponly=True,
+                        secure=config.SECURE_COOKIES, samesite="strict", path="/api/auth")
+    return {"ok": True, "code": code,
+            "message": f"A sign-in link is on its way to {email}. It works for {config.LINK_MINUTES} minutes."}
+
+
+@app.post("/api/auth/wait")
+def wait_for_link(request: Request, response: Response):
+    """The asking page checks in here: signed in once its link is opened, here or on another device."""
+    if auth.session_user(request.cookies.get(auth.COOKIE)) is not None:
+        return {"state": "signed_in"}            # opened in another tab of this browser
+    state, session = auth.collect_wait(request.cookies.get(auth.WAIT_COOKIE), request.headers.get("user-agent", ""))
+    if session:
+        set_session(response, session)
+    if state != "waiting":
+        response.delete_cookie(auth.WAIT_COOKIE, path="/api/auth")
+    return {"state": state}
 
 
 @app.get("/api/auth/link")
-def link_info(token: str = ""):
-    info = auth.peek_link(token)
+def link_info(request: Request, token: str = ""):
+    info = auth.peek_link(token, request.cookies.get(auth.WAIT_COOKIE))
     if info is None:
         raise auth.AuthError("That link has expired or was already used. Ask for a new one.")
     return info
@@ -236,14 +260,16 @@ def link_info(token: str = ""):
 
 class Token(BaseModel):
     token: str = Field(max_length=200)
+    where: str = "here"              # "here" signs this device in; "asker", the device that asked for the link
 
 
 @app.post("/api/auth/verify")
 def verify(body: Token, request: Request, response: Response):
-    _, session, claimed = auth.use_link(body.token, request.headers.get("user-agent", ""))
-    response.set_cookie(auth.COOKIE, session, max_age=config.SESSION_DAYS * 86400, httponly=True,
-                        secure=config.SECURE_COOKIES, samesite="lax", path="/")
-    return {"ok": True, "claimed": claimed}
+    for_asker = body.where == "asker"
+    _, session, claimed = auth.use_link(body.token, request.headers.get("user-agent", ""), for_asker)
+    if session:
+        set_session(response, session)
+    return {"ok": True, "claimed": claimed, "where": "asker" if for_asker else "here"}
 
 
 class SignOut(BaseModel):
@@ -261,7 +287,8 @@ def sign_out(body: SignOut, request: Request, response: Response):
 
 # ---------------------------------------------------------------------- the account
 def players_of(user_id):
-    rows = db.all_rows("SELECT p.id, p.name, p.is_self, (SELECT COUNT(*) FROM throws t WHERE t.player_id = p.id) AS n "
+    rows = db.all_rows("SELECT p.id, p.name, p.is_self, (SELECT COUNT(*) FROM throws t WHERE t.player_id = p.id "
+                       f"AND t.{tables.REAL}) AS n "
                        "FROM players p WHERE p.owner_id = ? ORDER BY p.is_self DESC, p.id", user_id)
     return [{"id": r["id"], "name": r["name"], "is_self": bool(r["is_self"]), "throws": r["n"]} for r in rows]
 
@@ -359,7 +386,7 @@ def delete_me(body: Confirm, response: Response, user=Depends(signed_in)):
 @app.get("/api/export.csv")
 def export(user=Depends(signed_in)):
     rows = db.all_rows("SELECT t.*, p.name AS user FROM throws t JOIN players p ON p.id = t.player_id "
-                       "WHERE p.owner_id = ? ORDER BY t.timestamp, t.id", user["id"])
+                       f"WHERE p.owner_id = ? AND t.{tables.REAL} ORDER BY t.timestamp, t.id", user["id"])
     out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=FIELDS, extrasaction="ignore")
     writer.writeheader()
@@ -425,7 +452,7 @@ def invite_guest(player_id: int, body: Invite, request: Request, user=Depends(si
         raise HTTPException(400, "That's your own seat.")
     if email == user["email"]:
         raise HTTPException(400, "That's your own address. Send it to the guest's email.")
-    token = auth.new_link(email, client_ip(request), "claim", player_id)
+    token, _ = auth.new_link(email, client_ip(request), "claim", player_id)
     mail.claim_email(email, auth.link_url(token), user["name"] or user["email"], row["name"], config.LINK_MINUTES)
     return {"ok": True, "message": f"Sent {row['name']} a link at {email}. Their throws move over when they open it."}
 
@@ -481,6 +508,20 @@ def roll(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
     camera.save_crops(throw_id, crops)
     changed(user, request, player_id)
     return {"message": message, **said}
+
+
+DICE = random.SystemRandom()
+
+
+@app.post("/api/players/{player_id}/virtual")
+def virtual_roll(player_id: int, request: Request, user=Depends(signed_in)):
+    """The server throws the dice: for playing with bets without your own dice. Settled like any roll, but it
+    isn't a throw of yours, so it stays out of the tracker and the stats (and leaves the camera's pictures alone)."""
+    die1, die2 = DICE.randint(1, 6), DICE.randint(1, 6)
+    said, _ = tables.roll(user["id"], player_id, die1, die2, True, {"dice_set": "Virtual"}, voice_of(user),
+                          buy_in_of(user), source=tables.VIRTUAL, premium=premium(user), personal=personal_of(user))
+    changed(user, request, player_id)
+    return {"message": f"Virtual roll: {die1}-{die2}. Not counted in your stats.", "dice": [die1, die2], **said}
 
 
 @app.post("/api/players/{player_id}/fix")

@@ -444,6 +444,7 @@ class DiceCamera:
         self._lock = threading.Lock()
         self._preview = None
         self._last_report = None      # die centres of the last thing we reported
+        self._first_look = True       # the first time the picture settles is what was there before anyone threw
 
     @property
     def model_status(self):
@@ -463,6 +464,8 @@ class DiceCamera:
                               "(ls /dev/video*) and nothing else is using it.")
             return False
         self._cap = cap
+        self._first_look = True
+        self._last_report = None
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -570,6 +573,14 @@ class DiceCamera:
 
         if len(reading) == 0:
             self._last_report = None    # empty carpet: the next throw is always new
+            self._first_look = False
+            return
+
+        # Dice already sitting on the table when the camera starts are left over from before: not a throw.
+        # Remember where they are so they're passed by like a throw already reported, until someone throws.
+        if self._first_look:
+            self._first_look = False
+            self._last_report = centres
             return
 
         # Dice still where they were last reported are the same throw, seen again after a hand or shadow

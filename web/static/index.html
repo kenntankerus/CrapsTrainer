@@ -43,6 +43,11 @@
         <button type="submit" class="gold wide">Email me a sign-in link</button>
       </form>
       <p class="status" id="signin-status" role="status"></p>
+      <div id="signin-wait" hidden>
+        <p class="code" id="signin-code"></p>
+        <p class="small muted">Open the link on any device. If it's not this one, check the link's page shows this
+          code and choose to sign this device in: this page carries on by itself.</p>
+      </div>
       <p class="small muted"><a href="/privacy">What we keep about you</a></p>
     </div>
   </section>
@@ -52,6 +57,7 @@
       <h1 id="verify-title">Sign in</h1>
       <p id="verify-text" class="muted"></p>
       <button type="button" class="gold wide" id="verify-button" hidden>Sign in</button>
+      <button type="button" class="wide" id="verify-here" hidden>Sign in here instead</button>
       <p class="status" id="verify-status" role="status"></p>
       <p><a href="/" id="verify-back" hidden>Ask for a new link</a></p>
     </div>
@@ -99,6 +105,7 @@
       <div class="entry-actions">
         <button type="button" id="fix-button" title="Put the dice above on the last throw (F2)">Fix last</button>
         <button type="button" id="undo-button" title="Take back the last throw (Ctrl+Z)">Undo</button>
+        <button type="button" id="virtual-button" title="Let the computer throw random dice, to play with bets. Not counted in your stats.">Virtual roll</button>
         <span class="hint muted" id="entry-hint">Tap the two dice (left first), or type them, then Roll.</span>
       </div>
       <p class="status" id="status" role="status" aria-live="polite"></p>

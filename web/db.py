@@ -30,10 +30,16 @@ CREATE TABLE IF NOT EXISTS links (
     player_id INTEGER,                          -- the guest, for a claim
     created REAL NOT NULL,
     expires REAL NOT NULL,
-    used REAL
+    used REAL,
+    wait_hash TEXT,                             -- hash of the asking device's secret, to send the sign-in back to it
+    code TEXT NOT NULL DEFAULT '',              -- what the asking device shows, to match on the link's page
+    agent TEXT NOT NULL DEFAULT '',             -- the asking device's browser
+    approved REAL,                              -- opened elsewhere and sent to the asking device
+    collected REAL                              -- the asking device picked its sign-in up
 );
 CREATE INDEX IF NOT EXISTS links_email ON links(email, created);
 CREATE INDEX IF NOT EXISTS links_ip ON links(ip, created);
+CREATE INDEX IF NOT EXISTS links_wait ON links(wait_hash);
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY,
     token_hash TEXT NOT NULL UNIQUE,
@@ -107,8 +113,20 @@ def connect():
     return conn
 
 
+# columns added after the first databases were made, with how to add them to an older one
+ADDED = {"links": [("wait_hash", "TEXT"), ("code", "TEXT NOT NULL DEFAULT ''"), ("agent", "TEXT NOT NULL DEFAULT ''"),
+                   ("approved", "REAL"), ("collected", "REAL")]}
+
+
 def init():
-    connect().executescript(SCHEMA)
+    conn = connect()
+    for table, columns in ADDED.items():          # before the schema, whose indexes may use the new columns
+        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if have:
+            for name, kind in columns:
+                if name not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    conn.executescript(SCHEMA)
 
 
 @contextmanager
