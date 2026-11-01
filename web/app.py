@@ -88,6 +88,10 @@ class Guard:
                          ("x-frame-options", "DENY")]
                 if path.startswith("/api/"):
                     extra.append(("cache-control", "no-store"))
+                elif path.startswith("/static/") or path == "/manifest.webmanifest":
+                    # Without this Cloudflare tells browsers to keep scripts for 4 hours unasked, so a change to
+                    # the pages doesn't reach them. no-cache still keeps a copy, but checks its ETag first.
+                    extra.append(("cache-control", "no-cache"))
                 message["headers"] = list(message.get("headers", [])) + [
                     (k.encode(), v.encode()) for k, v in extra if k not in have]
             await send(message)
@@ -242,12 +246,12 @@ def wait_for_link(request: Request, response: Response):
     """The asking page checks in here: signed in once its link is opened, here or on another device."""
     if auth.session_user(request.cookies.get(auth.COOKIE)) is not None:
         return {"state": "signed_in"}            # opened in another tab of this browser
-    state, session = auth.collect_wait(request.cookies.get(auth.WAIT_COOKIE), request.headers.get("user-agent", ""))
+    state, session, code = auth.collect_wait(request.cookies.get(auth.WAIT_COOKIE), request.headers.get("user-agent", ""))
     if session:
         set_session(response, session)
     if state != "waiting":
         response.delete_cookie(auth.WAIT_COOKIE, path="/api/auth")
-    return {"state": state}
+    return {"state": state, "code": code}
 
 
 @app.get("/api/auth/link")

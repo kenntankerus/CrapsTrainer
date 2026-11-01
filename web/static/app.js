@@ -135,11 +135,7 @@ function setupSignIn() {
     try {
       const result = await api("/api/auth/request", { email: $("email").value, turnstile: turnstileToken });
       node.textContent = result.message;
-      if (result.code) {
-        $("signin-code").textContent = `Code ${result.code}`;
-        $("signin-wait").hidden = false;
-        waitForLink();
-      }
+      if (result.code) showWaiting(result.code);
     } catch (error) {
       node.textContent = error.message;
       node.classList.add("error");
@@ -150,6 +146,25 @@ function setupSignIn() {
 
 // The page that asked for a link waits for it: opened here, in another tab or on another device, it signs this page in.
 let waitTimer = null;
+function showWaiting(code) {
+  $("signin-code").textContent = `Code ${code}`;
+  $("signin-wait").hidden = false;
+  waitForLink();
+}
+
+// A page loaded (or reloaded) while its link is out: take the sign-in if it was sent here already, or wait again.
+async function resumeWaiting() {
+  let result;
+  try {
+    result = await api("/api/auth/wait", {});
+  } catch { return; }
+  if (result.state === "signed_in") await boot();
+  else if (result.state === "waiting") {
+    $("signin-status").textContent = "A sign-in link is on its way to you.";
+    showWaiting(result.code);
+  }
+}
+
 function waitForLink() {
   clearTimeout(waitTimer);
   waitTimer = setTimeout(async () => {
@@ -234,6 +249,8 @@ async function boot(message = "") {
     if (error.status !== 401) {
       showGate("signin");
       $("signin-status").textContent = error.message;
+    } else {
+      await resumeWaiting();
     }
     return;
   }

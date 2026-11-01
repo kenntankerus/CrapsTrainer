@@ -44,6 +44,13 @@ def test_needs_sign_in_and_header():
         assert plain.post("/api/auth/request", json={"email": "a@b.co"}).status_code == 403
 
 
+def test_pages_and_scripts_are_checked_for_changes():
+    # a browser holding an old app.js for hours was why signing in from another device didn't work
+    c = client()
+    for path in ("/", "/static/app.js", "/static/style.css", "/manifest.webmanifest"):
+        assert c.get(path).headers["cache-control"] == "no-cache", path
+
+
 def test_sign_in_link_works_once():
     with client() as c:
         assert c.post("/api/auth/request", json={"email": "Once@Example.com"}).status_code == 200
@@ -61,7 +68,7 @@ def test_link_opened_elsewhere_signs_in_the_asking_device():
                        headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0"})
         code = r.json()["code"]
         assert re.fullmatch(r"\d{4}", code)
-        assert asker.post("/api/auth/wait").json()["state"] == "waiting"
+        assert asker.post("/api/auth/wait").json() == {"state": "waiting", "code": code}    # a reloaded page shows it again
         token = token_from_mail()
         info = phone.get("/api/auth/link", params={"token": token}).json()
         assert info["asked_on"] == {"device": "Firefox on Linux", "code": code}

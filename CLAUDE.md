@@ -37,7 +37,9 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 - The desktop history is imported into the owner's account: 424 throws, the craps game's saved table and 716 dice
   pictures. Tested on Android and on a PC.
 - Sign-in links can be opened on any device: the page that asked shows a 4-digit code and waits, and the link's page
-  offers to sign that device in (or this one instead).
+  offers to sign that device in (or this one instead). Tested working: laptop asks, phone approves.
+- Scripts and styles are sent `no-cache`, and Cloudflare's Browser Cache TTL is set to **Respect Existing Headers**
+  (its 4-hour default kept old copies of `app.js` in browsers, which broke the new sign-in). Leave it that way.
 - The table has a **Virtual roll** button: the server throws random dice that settle bets but are stored with
   source `virtual`, which the tracker, the stats, the throw counts and the export leave out.
 - When the camera starts, dice already on the table are taken as the starting picture, not a throw.

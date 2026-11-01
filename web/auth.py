@@ -150,10 +150,11 @@ def new_session(conn, user_id, agent=""):
 
 
 def collect_wait(wait, agent=""):
-    """For the device that asked for a link: ("signed_in", session token) once the link was opened somewhere else
-    and sent its sign-in here; ("waiting", None) while a link it asked for is still out; ("expired", None) after."""
+    """For the device that asked for a link: ("signed_in", session token, "") once the link was opened somewhere else
+    and sent its sign-in here; ("waiting", None, its code) while a link it asked for is still out, so a page loaded
+    again can show the code again; ("expired", None, "") after."""
     if not wait:
-        return "expired", None
+        return "expired", None, ""
     now = time.time()
     with db.transaction() as conn:
         row = conn.execute("SELECT * FROM links WHERE wait_hash = ? AND approved > ? AND collected IS NULL "
@@ -162,10 +163,10 @@ def collect_wait(wait, agent=""):
             user = conn.execute("SELECT id FROM users WHERE email = ?", (row["email"],)).fetchone()
             conn.execute("UPDATE links SET collected = ? WHERE wait_hash = ?", (now, row["wait_hash"]))
             if user is not None:
-                return "signed_in", new_session(conn, user["id"], agent)
-        out = conn.execute("SELECT 1 FROM links WHERE wait_hash = ? AND used IS NULL AND expires > ?",
-                           (_hash(wait), now)).fetchone()
-    return ("waiting" if out else "expired"), None
+                return "signed_in", new_session(conn, user["id"], agent), ""
+        out = conn.execute("SELECT code FROM links WHERE wait_hash = ? AND used IS NULL AND expires > ? "
+                           "ORDER BY created DESC LIMIT 1", (_hash(wait), now)).fetchone()
+    return ("waiting", None, out["code"]) if out else ("expired", None, "")
 
 
 def self_player(conn, user_id):
