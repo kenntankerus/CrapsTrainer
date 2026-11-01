@@ -43,32 +43,35 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 - The table has a **Virtual roll** button: the server throws random dice that settle bets but are stored with
   source `virtual`, which the tracker, the stats, the throw counts and the export leave out.
 - When the camera starts, dice already on the table are taken as the starting picture, not a throw.
+- **Dice sets.** A hold is "face up - face toward you" for each die, and every throw logs its hold:
+  `Straight Sixes 6-5` (both dice alike), `3-V L3-5 R3-6`, `Hardway 3-2`, `Custom L5-1 R5-1`. The web app's hold
+  picker lists the holds that are the chosen set (`SET_HOLDS` in `dice_stats.py`); Custom picks each die. The owner
+  asked for this knowing it may get busy in the tracker, and may simplify it later.
+  - The owner's holds (`NAMED_HOLDS`): 3-V L3-5 R3-6, 3-A L3-1 R3-5, 2-V L2-6 R2-3, 2-A L2-4 R2-1, Straight Sixes
+    6-2 on both, Parallel Sixes 6-3 on both, Cross-Sixes L6-2 R6-3 and L6-2 R6-4 and both swapped. The same hold
+    with the dice turning the other way is the same set (`same_set`: same top pair, the same pairs in either order),
+    so each set has two holds and Cross-Sixes eight. Swapping the dice is a different hold, and for V and A sets a
+    different set (2-V swapped is 2-A), so it is never matched. Hardway is both dice alike with 2, 3, 4, 5 rolling
+    (8 holds); All Sevens is every rolling pair adding up to 7 (24). No hold is in two sets.
+  - Axis was dropped: it's All Sevens. `L5-1 R5-1` rolls Straight Sixes' pairs with fives on top; the owner
+    wants it kept Custom.
+  - `set_name` logs a Custom hold that is a set under that set's name, on the server, for every way a throw comes in.
+  - Relabelled in the server's database (backup from before: `data/craps-before-relabel-20261101.db`) and
+    `dice_throws.csv`: old "Hardway 6-2" / "6-5" are `Straight Sixes 6-2` / `6-5`, "Hardway 5-1" is
+    `Custom L5-1 R5-1`, "Parallel" is Parallel Sixes. Older 3-V, All Sevens, Cross-Sixes and Parallel Sixes throws
+    have no hold recorded.
+  - The desktop apps get the set names and the 8 Hardway holds, but no hold picker for the other sets.
 - Never tried for real yet: the Brio webcam on Linux (camera lines in `.env` still off; needs tuning with the
   Tune window; Windows exposure -3 maps to 1250), edge-tts, ElevenLabs and Kokoro.
 
 ## Next up
 
-1. **Dice sets: the named holds** (waiting on the owner's holds for 3-V, Parallel Sixes, Cross-Sixes and Axis).
-   - Every throw logs its hold, the face toward the shooter included: `Straight Sixes 6-5` (both dice alike),
-     `All Sevens L6-2 R1-5`, `Hardway 3-2`, `Custom L5-1 R5-1`. The web app's hold picker lists the holds that are
-     the chosen set (`SET_HOLDS` in `dice_stats.py`); Custom picks each die. The owner asked for this knowing it
-     may get busy in the tracker, and may simplify it later.
-   - `set_name` logs a Custom hold that is a set under that set's name. Hardway is both dice alike with 2, 3, 4, 5
-     rolling (8 holds); All Sevens is every rolling pair adding up to 7; a set in `NAMED_HOLDS` is matched on
-     the same top pair, then the same pairs either way the dice turn, left and right swapped the same (`same_set`).
-   - **Straight Sixes** is 6-2 or 6-5 on both dice. `L5-1 R5-1` rolls the same pairs with fives on top; the owner
-     wants it kept Custom. "Parallel" is renamed **Parallel Sixes**.
-   - Done in the server's database (backup from before: `data/craps-before-relabel-20261101.db`) and
-     `dice_throws.csv`: old "Hardway 6-2" / "6-5" are `Straight Sixes 6-2` / `6-5`, "Hardway 5-1" is
-     `Custom L5-1 R5-1`, "Parallel" is Parallel Sixes. Older throws of the other sets have no hold recorded.
-   - Left: add the owner's holds to `NAMED_HOLDS`, then relabel any Custom throws that turn out to be named.
-   - The desktop apps get the new set names and the 8 Hardway holds, but no hold picker for the other sets.
-2. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
+1. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
-3. **Finish the server** (`web/README.md`): turn on the camera lines in `.env` and tune it, fetch the free voice
+2. **Finish the server** (`web/README.md`): turn on the camera lines in `.env` and tune it, fetch the free voice
    (`docker compose exec web python -m web.get_voices`, then `--prepare`), record room and crowd sounds
    (`python -m web.make_sounds`, needs the ElevenLabs key), and add the backup crontab lines.
-4. **The server is the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,
+3. **The server is the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,
    automatic login, and `~/.config/autostart/craps-kiosk.desktop` runs `~/.local/bin/craps-kiosk` (screen blanking,
    locking and sleep off, then Firefox on https://craps.kbmoto.net). **Kiosk mode is off for now**: Firefox opens as a
    normal window, with Terminal pinned to the dock, so the browser and consoles stay in reach while things get

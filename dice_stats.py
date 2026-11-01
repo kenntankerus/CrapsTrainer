@@ -10,7 +10,7 @@ import math
 import re
 from collections import Counter
 
-DEFAULT_SETS = ["3-V", "Hardway", "All Sevens", "Straight Sixes", "Parallel Sixes", "Cross-Sixes", "Axis", "Random"]
+DEFAULT_SETS = ["3-V", "3-A", "2-V", "2-A", "Hardway", "All Sevens", "Straight Sixes", "Parallel Sixes", "Cross-Sixes", "Random"]
 DEFAULT_POSITIONS = ["12 o'clock", "Stick left", "Stick right"]
 UNSPECIFIED = "Unspecified"                  # used for older throws logged before positions existed
 COMPARE_MODES = ["Dice set", "Position", "Set + Position"]
@@ -22,8 +22,19 @@ HOLDS = [f"{up}-{facing}" for up in range(1, 7) for facing in range(1, 7) if fac
 # A Hardway set is both dice held alike with 2, 3, 4 and 5 rolling (1 and 6 on the sides): every pair a hardway.
 HARDWAY_SETUPS = [h for h in HOLDS if {int(h[0]), int(h[2])} <= {2, 3, 4, 5}]
 CUSTOM_RE = re.compile(r"^Custom L([1-6]-[1-6]) R([1-6]-[1-6])$")
-# One hold for each named set, left die then right. Other holds that do the same are the same set (same_set).
-NAMED_HOLDS = {"Straight Sixes": ("6-2", "6-2")}
+# Holds for each named set, left die then right. The same hold with the dice turning the other way is the
+# same set (same_set): 3-V's L3-5 R3-6 brings in L3-2 R3-1. Swapping the dice is a different hold, and can be
+# a different set: 2-V's L2-1 R2-4 swapped is 2-A's L2-4 R2-1. (The Axis set was dropped: it is All Sevens.)
+NAMED_HOLDS = {
+    "3-V": [("3-5", "3-6")],
+    "3-A": [("3-1", "3-5")],
+    "2-V": [("2-6", "2-3")],
+    "2-A": [("2-4", "2-1")],
+    "Straight Sixes": [("6-2", "6-2")],                 # and 6-5 on both
+    "Parallel Sixes": [("6-3", "6-3")],                 # and 6-4 on both
+    # and 6-5 with 6-4 or 6-3: 8 holds
+    "Cross-Sixes": [("6-2", "6-3"), ("6-2", "6-4"), ("6-3", "6-2"), ("6-4", "6-2")],
+}
 
 
 def rolling_faces(hold):
@@ -39,12 +50,11 @@ def rolling_pairs(left, right):
 
 def same_set(hold, other):
     """Whether two holds (left, right) are the same set: the same top pair, then the same pairs whichever way
-    the dice turn (6-2 and 6-5 on both dice are both straight sixes), with left and right swapped the same."""
+    the dice turn (6-2 and 6-5 on both dice are both straight sixes). Each die keeps its side: swapped round,
+    2-V's pairs are 2-A's."""
     pairs = rolling_pairs(*hold)
     turned = [pairs[0]] + pairs[:0:-1]
-    target = rolling_pairs(*other)
-    swapped = [(b, a) for a, b in target]
-    return any(p == t for p in (pairs, turned) for t in (target, swapped))
+    return rolling_pairs(*other) in (pairs, turned)
 
 
 def hold_label(left, right):
@@ -60,8 +70,8 @@ def _holds_of(rule):
 # is logged with every throw, e.g. "Straight Sixes 6-5". Sets with no holds here are logged by name alone.
 SET_HOLDS = {
     "Hardway": [(h, h) for h in HARDWAY_SETUPS],
-    **{name: _holds_of(lambda left, right, hold=hold: same_set((left, right), hold))
-       for name, hold in NAMED_HOLDS.items()},
+    **{name: _holds_of(lambda left, right, holds=holds: any(same_set((left, right), hold) for hold in holds))
+       for name, holds in NAMED_HOLDS.items()},
     "All Sevens": _holds_of(lambda left, right: all(a + b == 7 for a, b in rolling_pairs(left, right))),
 }
 HOLD_SUFFIX_RE = re.compile(r"^(.+) ([1-6]-[1-6]|L[1-6]-[1-6] R[1-6]-[1-6])$")
