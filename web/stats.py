@@ -6,7 +6,7 @@ Small / Tall / All run, the shooter, recent throws, the totals chart and how oft
 from collections import Counter
 
 from dice_stats import (COMPARE_MODES, DEFAULT_POSITIONS, DEFAULT_SETS, EXPECTED, RANDOM_NUMBERS_PER_RUN,
-                        UNSPECIFIED, bonus_status, shooter_status, summarize, summarize_runs)
+                        UNSPECIFIED, bonus_status, set_family, shooter_status, summarize, summarize_runs)
 
 
 def group_name(throw, mode):
@@ -109,9 +109,9 @@ def tracker_view(throws, mode, dice_set, position):
 
 def known_names(throws):
     """The dice sets and positions to offer: the usual ones, then any typed in before."""
-    sets = list(DEFAULT_SETS)
+    sets = list(DEFAULT_SETS) + ["Custom"]      # Custom only here: the desktop apps have no way to pick its holds
     for t in throws:
-        name = t["dice_set"].split(" ")[0] if t["dice_set"].startswith("Hardway") else t["dice_set"]
+        name = set_family(t["dice_set"])
         if name not in sets:
             sets.append(name)
     positions = list(DEFAULT_POSITIONS)

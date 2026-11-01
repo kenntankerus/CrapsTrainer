@@ -10,12 +10,83 @@ import math
 import re
 from collections import Counter
 
-DEFAULT_SETS = ["3-V", "Hardway", "All Sevens", "Parallel", "Cross-Sixes", "Axis", "Random"]
+DEFAULT_SETS = ["3-V", "Hardway", "All Sevens", "Straight Sixes", "Parallel Sixes", "Cross-Sixes", "Axis", "Random"]
 DEFAULT_POSITIONS = ["12 o'clock", "Stick left", "Stick right"]
 UNSPECIFIED = "Unspecified"                  # used for older throws logged before positions existed
 COMPARE_MODES = ["Dice set", "Position", "Set + Position"]
-# How a Hardway set is held, as "face up - face toward you": 6-2 is sixes up with twos facing the thrower.
-HARDWAY_SETUPS = [f"{up}-{facing}" for up in range(1, 7) for facing in range(1, 7) if facing not in (up, 7 - up)]
+
+# How a die is held, as "face up - face toward you": 6-2 is six up with the two facing the thrower.
+# Thrown end over end it shows up, toward you, down, then away, so a hold for each die fixes the four
+# pairs the dice come up as; the two faces left on the sides don't come up.
+HOLDS = [f"{up}-{facing}" for up in range(1, 7) for facing in range(1, 7) if facing not in (up, 7 - up)]
+# A Hardway set is both dice held alike with 2, 3, 4 and 5 rolling (1 and 6 on the sides): every pair a hardway.
+HARDWAY_SETUPS = [h for h in HOLDS if {int(h[0]), int(h[2])} <= {2, 3, 4, 5}]
+CUSTOM_RE = re.compile(r"^Custom L([1-6]-[1-6]) R([1-6]-[1-6])$")
+# One hold for each named set, left die then right. Other holds that do the same are the same set (same_set).
+NAMED_HOLDS = {"Straight Sixes": ("6-2", "6-2")}
+
+
+def rolling_faces(hold):
+    """The faces a die held this way comes up on as it rolls: up, toward you, down, away."""
+    up, facing = int(hold[0]), int(hold[2])
+    return [up, facing, 7 - up, 7 - facing]
+
+
+def rolling_pairs(left, right):
+    """The four pairs a hold comes up as, top pair first, in the order the dice roll through them."""
+    return list(zip(rolling_faces(left), rolling_faces(right)))
+
+
+def same_set(hold, other):
+    """Whether two holds (left, right) are the same set: the same top pair, then the same pairs whichever way
+    the dice turn (6-2 and 6-5 on both dice are both straight sixes), with left and right swapped the same."""
+    pairs = rolling_pairs(*hold)
+    turned = [pairs[0]] + pairs[:0:-1]
+    target = rolling_pairs(*other)
+    swapped = [(b, a) for a, b in target]
+    return any(p == t for p in (pairs, turned) for t in (target, swapped))
+
+
+def hold_label(left, right):
+    """How a hold is written after the set's name: "6-2" when both dice are held alike, else "L6-2 R1-5"."""
+    return left if left == right else f"L{left} R{right}"
+
+
+def _holds_of(rule):
+    return [(left, right) for left in HOLDS for right in HOLDS if rule(left, right)]
+
+
+# Every hold that is each set, (left, right), for picking which one was thrown: the face toward the shooter
+# is logged with every throw, e.g. "Straight Sixes 6-5". Sets with no holds here are logged by name alone.
+SET_HOLDS = {
+    "Hardway": [(h, h) for h in HARDWAY_SETUPS],
+    **{name: _holds_of(lambda left, right, hold=hold: same_set((left, right), hold))
+       for name, hold in NAMED_HOLDS.items()},
+    "All Sevens": _holds_of(lambda left, right: all(a + b == 7 for a, b in rolling_pairs(left, right))),
+}
+HOLD_SUFFIX_RE = re.compile(r"^(.+) ([1-6]-[1-6]|L[1-6]-[1-6] R[1-6]-[1-6])$")
+
+
+def set_name(dice_set):
+    """The name to log a throw under. A Custom hold that is really a named set goes under that name, with
+    its hold: "Custom L3-2 R3-2" is "Hardway 3-2", "Custom L6-5 R6-5" is "Straight Sixes 6-5", and
+    "Custom L6-2 R1-5" (every pair adds up to 7) is "All Sevens L6-2 R1-5". Anything else comes back as it is."""
+    dice_set = (dice_set or "").strip()
+    match = CUSTOM_RE.match(dice_set)
+    if not match:
+        return dice_set
+    hold = match.groups()
+    for name, holds in SET_HOLDS.items():
+        if hold in holds:
+            return f"{name} {hold_label(*hold)}"
+    return dice_set
+
+
+def set_family(dice_set):
+    """The name to offer in the dice set list: "Hardway 6-2" and "Custom L6-2 R6-1" are picked as
+    Hardway and Custom, with the hold chosen beside them."""
+    match = HOLD_SUFFIX_RE.match(dice_set)
+    return match.group(1) if match else dice_set
 
 
 BONUS_SMALL = (2, 3, 4, 5, 6)

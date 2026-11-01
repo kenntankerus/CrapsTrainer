@@ -28,7 +28,7 @@ from . import config
 sys.path.insert(0, config.ROOT)       # craps_engine.py and friends live at the top of the repo
 
 from craps_engine import HOP_COMBOS, BetError, money  # noqa: E402
-from dice_stats import COMPARE_MODES, HARDWAY_SETUPS  # noqa: E402
+from dice_stats import COMPARE_MODES, HARDWAY_SETUPS, HOLDS, SET_HOLDS, hold_label, set_name  # noqa: E402
 from stickman import DEFAULT_VOICE, VOICES, pack_name  # noqa: E402
 
 from . import auth, camera, db, events, mail, stats, tables, voice  # noqa: E402
@@ -209,12 +209,16 @@ def site_config():
     return {
         "site": config.SITE_NAME, "turnstile": config.TURNSTILE_SITE_KEY,
         "voices": [{"name": v, "slug": pack_name(v)} for v in VOICES], "default_voice": DEFAULT_VOICE,
-        "setups": HARDWAY_SETUPS, "modes": COMPARE_MODES, "chips": tables.CHIPS, "hops": HOP_COMBOS,
+        "set_holds": SET_LABELS, "holds": HOLDS, "modes": COMPARE_MODES, "chips": tables.CHIPS, "hops": HOP_COMBOS,
         "buy_ins": [{"cents": c, "label": money(c)} for c in BUY_INS],
     }
 
 
 # ---------------------------------------------------------------------- signing in
+# each set's holds as the page lists them, e.g. "Straight Sixes": ["6-2", "6-5"]
+SET_LABELS = {name: [hold_label(*hold) for hold in holds] for name, holds in SET_HOLDS.items()}
+
+
 class LinkRequest(BaseModel):
     email: str = Field(max_length=300)
     turnstile: str = Field("", max_length=4096)
@@ -324,7 +328,10 @@ class Settings(BaseModel):
     personal: Optional[bool] = None
     back_wall: Optional[bool] = None
     dice_set: Optional[str] = Field(None, max_length=40)
-    setup: Optional[str] = None
+    setup: Optional[str] = None              # the Hardway hold, from before every set had one (see holds)
+    holds: Optional[dict[str, str]] = None   # the hold picked last for each set
+    custom_left: Optional[str] = None        # a Custom set's hold for each die
+    custom_right: Optional[str] = None
     position: Optional[str] = Field(None, max_length=40)
     compare: Optional[str] = None
     tab: Optional[str] = Field(None, max_length=20)
@@ -355,6 +362,12 @@ def update_me(body: MeUpdate, request: Request, user=Depends(signed_in)):
                 check_cents(new["buy_in"])
             if "setup" in new and new["setup"] not in HARDWAY_SETUPS + [""]:
                 del new["setup"]
+            if "holds" in new:
+                new["holds"] = {**current.get("holds", {}), **{name: hold for name, hold in new["holds"].items()
+                                                               if hold in SET_LABELS.get(name, []) + [""]}}
+            for key in ("custom_left", "custom_right"):
+                if key in new and new[key] not in HOLDS + [""]:
+                    del new[key]
             if "compare" in new and new["compare"] not in COMPARE_MODES:
                 del new["compare"]
             if "player_id" in new:
@@ -498,7 +511,7 @@ class Dice(BaseModel):
 
 @app.post("/api/players/{player_id}/roll")
 def roll(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
-    meta = {"dice_set": body.dice_set.strip(), "position": body.position.strip(), "local_time": body.local_time}
+    meta = {"dice_set": set_name(body.dice_set), "position": body.position.strip(), "local_time": body.local_time}
     camera_read, crops = camera.service.take_unclear(user["id"], player_id)     # dice the camera just couldn't read
     if body.mode == "tracker":
         said, throw_id = tables.log_throw(user["id"], player_id, body.die1, body.die2, body.back_wall, meta,
@@ -548,7 +561,7 @@ def undo(player_id: int, request: Request, user=Depends(signed_in)):
 def tracker(player_id: int, mode: str = "", dice_set: str = "", position: str = "", user=Depends(signed_in)):
     conn = db.connect()
     tables.player_row(conn, user["id"], player_id)
-    return stats.tracker_view(tables.player_throws(conn, player_id), mode, dice_set, position)
+    return stats.tracker_view(tables.player_throws(conn, player_id), mode, set_name(dice_set), position)
 
 
 # ---------------------------------------------------------------------- live updates
@@ -578,7 +591,7 @@ class CameraBinding(BaseModel):
 def binding_of(body, user):
     tables.player_row(db.connect(), user["id"], body.player_id)
     return {"player_id": body.player_id, "mode": "tracker" if body.mode == "tracker" else "table",
-            "back_wall": body.back_wall, "dice_set": body.dice_set.strip(), "position": body.position.strip(),
+            "back_wall": body.back_wall, "dice_set": set_name(body.dice_set), "position": body.position.strip(),
             "tz_offset": body.tz_offset, "voice": voice_of(user), "buy_in": buy_in_of(user),
             "premium": premium(user), "personal": personal_of(user)}
 
