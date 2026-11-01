@@ -36,6 +36,13 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 - The Tkinter apps were confirmed to still run on Windows after the shared-logic refactor, before the wipe.
 - The desktop history is imported into the owner's account: 424 throws, the craps game's saved table and 716 dice
   pictures. Tested on Android and on a PC.
+- Sign-in links can be opened on any device: the page that asked shows a 4-digit code and waits, and the link's page
+  offers to sign that device in (or this one instead). Tested working: laptop asks, phone approves.
+- Scripts and styles are sent `no-cache`, and Cloudflare's Browser Cache TTL is set to **Respect Existing Headers**
+  (its 4-hour default kept old copies of `app.js` in browsers, which broke the new sign-in). Leave it that way.
+- The table has a **Virtual roll** button: the server throws random dice that settle bets but are stored with
+  source `virtual`, which the tracker, the stats, the throw counts and the export leave out.
+- When the camera starts, dice already on the table are taken as the starting picture, not a throw.
 - Never tried for real yet: the Brio webcam on Linux (camera lines in `.env` still off; needs tuning with the
   Tune window; Windows exposure -3 maps to 1250), edge-tts, ElevenLabs and Kokoro.
 
@@ -57,6 +64,8 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 3. **Finish the server** (`web/README.md`): turn on the camera lines in `.env` and tune it, fetch the free voice
    (`docker compose exec web python -m web.get_voices`, then `--prepare`), record room and crowd sounds
    (`python -m web.make_sounds`, needs the ElevenLabs key), and add the backup crontab lines.
-4. **Make the server the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,
-   automatic login, Firefox started with `--kiosk https://craps.kbmoto.net`, screen blanking off, lid open.
-   Check memory with `free -h` first; the app itself keeps running in Docker underneath.
+4. **The server is the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,
+   automatic login, and `~/.config/autostart/craps-kiosk.desktop` runs `~/.local/bin/craps-kiosk` (screen blanking,
+   locking and sleep off, then Firefox on https://craps.kbmoto.net). **Kiosk mode is off for now**: Firefox opens as a
+   normal window, with Terminal pinned to the dock, so the browser and consoles stay in reach while things get
+   ironed out. When it's done, put `--kiosk` back on the `firefox` line in that script.

@@ -21,6 +21,10 @@ ZONES = (set(SPOTS) - {hop_spot(c) for c in HOP_COMBOS}) | set(ODDS_ZONES) | {"h
 DEFAULT_BUY_IN = 10000                                  # cents
 CHIPS = (100, 500, 2500, 10000, 50000)                  # the rack, as in craps_game.py
 LOCAL_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+# Virtual rolls are dice the server throws for playing with bets. They settle the table and can be fixed or
+# taken back like any roll, but they aren't anyone's throws, so the tracker, the stats and the export skip them.
+VIRTUAL = "virtual"
+REAL = f"source != '{VIRTUAL}'"
 
 
 class TableError(Exception):
@@ -60,7 +64,9 @@ def throw_dict(row):
 
 
 def player_throws(conn, player_id):
-    rows = conn.execute("SELECT * FROM throws WHERE player_id = ? ORDER BY timestamp, id", (player_id,)).fetchall()
+    """The player's real throws (virtual rolls left out), oldest first."""
+    rows = conn.execute(f"SELECT * FROM throws WHERE player_id = ? AND {REAL} ORDER BY timestamp, id",
+                        (player_id,)).fetchall()
     return [throw_dict(r) for r in rows]
 
 
@@ -263,7 +269,8 @@ def fix_last(user_id, player_id, die1, die2, voice=DEFAULT_VOICE, premium=False,
             raise BetError("Nothing to fix yet.")
         old = f"{last['die1']}-{last['die2']}"
         throw = throw_dict(last)
-        throw.update(die1=die1, die2=die2, total=die1 + die2, source="corrected")
+        source = VIRTUAL if last["source"] == VIRTUAL else "corrected"     # a fixed virtual roll stays out of the stats
+        throw.update(die1=die1, die2=die2, total=die1 + die2, source=source)
         if last["table_before"]:
             table = CrapsTable.from_dict(json.loads(last["table_before"]))
             note, net, panel, pieces, result = settle(conn, player_id, table, throw, voice)
@@ -273,8 +280,8 @@ def fix_last(user_id, player_id, die1, die2, voice=DEFAULT_VOICE, premium=False,
         else:
             note, net, pieces, result = last["note"], last["net"], None, None
             message = f"Fixed last throw: {old} -> {die1}-{die2}"
-        conn.execute("UPDATE throws SET die1 = ?, die2 = ?, total = ?, source = 'corrected', net = ?, note = ? "
-                     "WHERE id = ?", (die1, die2, die1 + die2, net, note, last["id"]))
+        conn.execute("UPDATE throws SET die1 = ?, die2 = ?, total = ?, source = ?, net = ?, note = ? "
+                     "WHERE id = ?", (die1, die2, die1 + die2, source, net, note, last["id"]))
         if pieces is None:
             throws = player_throws(conn, player_id)
             pieces = croupier_call(throws, voice if voice in VOICES else DEFAULT_VOICE)
@@ -354,7 +361,8 @@ def view(user_id, player_id, buy_in=DEFAULT_BUY_IN):
         bets.append({"spot": spot, "zone": "hop" if spot.startswith("hop_") else spot, "name": spot_name(spot),
                      "amount": bet["amount"], "odds": bet["odds"], "working": table.working(spot),
                      "odds_working": table.odds_working(spot)})
-    rolls = conn.execute("SELECT die1, die2, total, back_wall, net, note, timestamp, table_before IS NOT NULL AS game "
+    rolls = conn.execute("SELECT die1, die2, total, back_wall, net, note, timestamp, source, "
+                         "table_before IS NOT NULL AS game "
                          "FROM throws WHERE player_id = ? ORDER BY id DESC LIMIT 30", (player_id,)).fetchall()
     by_bet = table.stats["by_bet"]
     return {
@@ -365,7 +373,8 @@ def view(user_id, player_id, buy_in=DEFAULT_BUY_IN):
         "bonus_open": not table.bonus_rolls, "bets": bets,
         "last_roll": json.loads(row["last_roll"]) if row["last_roll"] else None,
         "rolls": [{"dice": [r["die1"], r["die2"]], "total": r["total"], "back_wall": bool(r["back_wall"]),
-                   "net": r["net"], "note": r["note"], "time": r["timestamp"][11:16], "game": bool(r["game"])}
+                   "net": r["net"], "note": r["note"], "time": r["timestamp"][11:16], "game": bool(r["game"]),
+                   "virtual": r["source"] == VIRTUAL}
                   for r in rolls],
         "can_undo": last_throw(conn, player_id) is not None,
         "summary": run_summary(table),

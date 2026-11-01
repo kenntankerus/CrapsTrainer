@@ -2,6 +2,11 @@
 Signing in with an emailed link: no passwords. Asking for a link makes an account the first
 time an address is used. The link signs one device in for SESSION_DAYS since it was last used.
 Only hashes of the link and session tokens are stored, so a copy of the database can't sign anyone in.
+
+The link often opens somewhere else than where it was asked for: email read on a phone, or in the
+email app's own browser. So the asking page keeps a secret of its own (the WAIT_COOKIE) and waits;
+whoever opens the link can send the sign-in back to it. The asking page shows a short code, and the
+link's page shows the same code, so nobody approves a stranger's device that asked for their address.
 """
 
 import hashlib
@@ -16,6 +21,7 @@ from datetime import datetime
 from . import config, db
 
 COOKIE = "craps_session"
+WAIT_COOKIE = "craps_wait"           # the asking device's secret, while it waits for its link to be opened
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -48,8 +54,9 @@ def check_turnstile(token, ip):
         return False
 
 
-def new_link(email, ip, purpose="login", player_id=None):
-    """Store a link for this address and return its token. Raises AuthError when too many were asked for."""
+def new_link(email, ip, purpose="login", player_id=None, wait=None, agent=""):
+    """Store a link for this address and return (its token, the code the asking device shows).
+    wait is the asking device's secret, for sending the sign-in back to it. Raises AuthError when too many were asked for."""
     now = time.time()
     window = config.LINK_MINUTES * 60
     recent = db.one("SELECT COUNT(*) FROM links WHERE email = ? AND created > ?", email, now - window)[0]
@@ -59,23 +66,46 @@ def new_link(email, ip, purpose="login", player_id=None):
     if ip and db.one("SELECT COUNT(*) FROM links WHERE ip = ? AND created > ?", ip, now - 3600)[0] >= config.LINKS_PER_IP:
         raise AuthError("Too many sign-in emails from here. Try again in an hour.")
     token = secrets.token_urlsafe(32)
+    code = f"{secrets.randbelow(10000):04d}" if wait else ""
     db.connect().execute(
-        "INSERT INTO links (token_hash, email, ip, purpose, player_id, created, expires) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (_hash(token), email, ip or "", purpose, player_id, now, now + window))
+        "INSERT INTO links (token_hash, email, ip, purpose, player_id, created, expires, wait_hash, code, agent) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (_hash(token), email, ip or "", purpose, player_id, now, now + window, _hash(wait) if wait else None, code,
+         (agent or "")[:200]))
     db.connect().execute("DELETE FROM links WHERE created < ?", (now - 7 * 86400,))
-    return token
+    return token, code
+
+
+def new_wait(old=""):
+    """The asking device's secret: the one it has already (so its earlier links still reach it), or a new one."""
+    return old if re.fullmatch(r"[A-Za-z0-9_-]{32,64}", old or "") else secrets.token_urlsafe(32)
+
+
+def device_name(agent):
+    """ "Firefox on Android" from a user-agent string, so the link's page can say which device asked."""
+    agent = agent or ""
+    browser = next((name for key, name in (("Edg/", "Edge"), ("OPR/", "Opera"), ("SamsungBrowser", "Samsung Internet"),
+                                           ("Firefox", "Firefox"), ("FxiOS", "Firefox"), ("CriOS", "Chrome"),
+                                           ("Chrome", "Chrome"), ("Safari", "Safari")) if key in agent), "a browser")
+    system = next((name for key, name in (("Android", "Android"), ("iPhone", "iPhone"), ("iPad", "iPad"),
+                                          ("Windows", "Windows"), ("Mac OS", "Mac"), ("CrOS", "ChromeOS"),
+                                          ("Linux", "Linux")) if key in agent), "")
+    return f"{browser} on {system}" if system else browser
 
 
 def link_url(token):
     return f"{config.BASE_URL}/auth/verify?token={urllib.parse.quote(token)}"
 
 
-def peek_link(token):
-    """What a link is for, without using it up (email apps open links to preview them)."""
+def peek_link(token, wait=""):
+    """What a link is for, without using it up (email apps open links to preview them). When it was asked for
+    somewhere else, which device that was and the code it shows, so the link can sign that one in instead."""
     row = db.one("SELECT * FROM links WHERE token_hash = ?", _hash(token or ""))
     if row is None or row["used"] or row["expires"] < time.time():
         return None
     info = {"email": row["email"], "purpose": row["purpose"]}
+    if row["wait_hash"] and row["wait_hash"] != _hash(wait or ""):
+        info["asked_on"] = {"device": device_name(row["agent"]), "code": row["code"]}
     if row["purpose"] == "claim":
         guest = db.one("SELECT p.name, u.name AS host FROM players p JOIN users u ON u.id = p.owner_id WHERE p.id = ?",
                        row["player_id"])
@@ -84,14 +114,18 @@ def peek_link(token):
     return info
 
 
-def use_link(token, agent=""):
-    """Spend the link: find or make the account, start a session. Returns (user id, session token, claimed guest name)."""
+def use_link(token, agent="", for_asker=False):
+    """Spend the link: find or make the account, start a session. Returns (user id, session token, claimed guest name).
+    With for_asker the session is for the device that asked for the link, not this one: it's marked approved,
+    and that device picks it up (collect_wait), so the session token returned is None."""
     now = time.time()
     with db.transaction() as conn:
         row = conn.execute("SELECT * FROM links WHERE token_hash = ?", (_hash(token or ""),)).fetchone()
         if row is None or row["used"] or row["expires"] < now:
             raise AuthError("That link has expired or was already used. Ask for a new one.")
-        conn.execute("UPDATE links SET used = ? WHERE id = ?", (now, row["id"]))
+        if for_asker and not row["wait_hash"]:
+            raise AuthError("This link can only sign in the device it's opened on.")
+        conn.execute("UPDATE links SET used = ?, approved = ? WHERE id = ?", (now, now if for_asker else None, row["id"]))
         user = conn.execute("SELECT * FROM users WHERE email = ?", (row["email"],)).fetchone()
         stamp = datetime.now().isoformat(timespec="seconds")
         if user is None:
@@ -103,10 +137,36 @@ def use_link(token, agent=""):
         claimed = None
         if row["purpose"] == "claim":
             claimed = claim_guest(conn, row["player_id"], user_id, own)
-        session = secrets.token_urlsafe(32)
-        conn.execute("INSERT INTO sessions (token_hash, user_id, created, last_seen, agent) VALUES (?, ?, ?, ?, ?)",
-                     (_hash(session), user_id, now, now, (agent or "")[:200]))
+        session = None if for_asker else new_session(conn, user_id, agent)
     return user_id, session, claimed
+
+
+def new_session(conn, user_id, agent=""):
+    session = secrets.token_urlsafe(32)
+    now = time.time()
+    conn.execute("INSERT INTO sessions (token_hash, user_id, created, last_seen, agent) VALUES (?, ?, ?, ?, ?)",
+                 (_hash(session), user_id, now, now, (agent or "")[:200]))
+    return session
+
+
+def collect_wait(wait, agent=""):
+    """For the device that asked for a link: ("signed_in", session token, "") once the link was opened somewhere else
+    and sent its sign-in here; ("waiting", None, its code) while a link it asked for is still out, so a page loaded
+    again can show the code again; ("expired", None, "") after."""
+    if not wait:
+        return "expired", None, ""
+    now = time.time()
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM links WHERE wait_hash = ? AND approved > ? AND collected IS NULL "
+                           "ORDER BY approved DESC LIMIT 1", (_hash(wait), now - config.LINK_MINUTES * 60)).fetchone()
+        if row is not None:
+            user = conn.execute("SELECT id FROM users WHERE email = ?", (row["email"],)).fetchone()
+            conn.execute("UPDATE links SET collected = ? WHERE wait_hash = ?", (now, row["wait_hash"]))
+            if user is not None:
+                return "signed_in", new_session(conn, user["id"], agent), ""
+        out = conn.execute("SELECT code FROM links WHERE wait_hash = ? AND used IS NULL AND expires > ? "
+                           "ORDER BY created DESC LIMIT 1", (_hash(wait), now)).fetchone()
+    return ("waiting", None, out["code"]) if out else ("expired", None, "")
 
 
 def self_player(conn, user_id):

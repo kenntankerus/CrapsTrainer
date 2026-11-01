@@ -24,7 +24,8 @@ EMAIL = "camera@example.com"
 def demo_camera(monkeypatch):
     monkeypatch.setattr(config, "CAMERA_SOURCE", "demo")
     monkeypatch.setattr(config, "CAMERA_USERS", {EMAIL})
-    throws = [(3, 4), (6, 6), (2, 5)]
+    # the pretend camera starts with its first dice already down: that's not a throw, so (1, 5) is never logged
+    throws = [(1, 5), (3, 4), (6, 6), (2, 5)]
     monkeypatch.setattr(camera.CameraService, "_source",
                         lambda self: (None, camera_demo.DemoCapture(throws, fps=30, tumble=0.4, rest=2.5, seed=1)))
     yield throws
@@ -68,6 +69,7 @@ def test_camera_rolls_the_table(demo_camera):
 
     rows = wait_for(lambda: db.all_rows("SELECT * FROM throws WHERE player_id = ? ORDER BY id", pid))
     first = rows[0]
+    assert all((r["die1"], r["die2"]) != (1, 5) for r in rows)        # left on the table before the camera started
     assert (first["die1"], first["die2"], first["source"], first["camera_read"]) == (3, 4, "camera", "3-4")
     assert first["dice_set"] == "3-V" and first["position"] == "Stick left"
     view = c.get(f"/api/players/{pid}/table").json()

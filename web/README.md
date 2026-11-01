@@ -7,11 +7,13 @@ which keep working as before.
 
 What's in this first version:
 
-* **Accounts with emailed sign-in links** (no passwords). The first link makes the account.
+* **Accounts with emailed sign-in links** (no passwords). The first link makes the account. The link can be
+  opened on any device: it can sign in the device that asked for it (which shows a code to match) or itself.
 * **Guests**: add players to your table who play on your screen with their own bankroll and stats.
   *Send history* emails a guest a link that moves their throws into an account of their own.
 * **The table**: every bet from the desktop game. Click or tap to bet, right-click or
-  press-and-hold to take down, drag (mouse) or *Move it…* (touch) to move. Undo and Fix last work
+  press-and-hold to take down, drag (mouse) or *Move it…* (touch) to move. *Virtual roll* throws random
+  dice for playing with bets; those rolls stay out of the tracker and the stats. Undo and Fix last work
   like Ctrl+Z and F2. Rolls settle on the server, so a phone and a laptop show the same table.
 * **The tracker**: log throws without bets, and compare dice sets and positions against fair dice,
   with the Small / Tall / All runs and the totals chart.

@@ -134,13 +134,57 @@ function setupSignIn() {
     node.textContent = "Sending…";
     try {
       const result = await api("/api/auth/request", { email: $("email").value, turnstile: turnstileToken });
-      node.textContent = result.message + " You can close this tab.";
+      node.textContent = result.message;
+      if (result.code) showWaiting(result.code);
     } catch (error) {
       node.textContent = error.message;
       node.classList.add("error");
     }
     if (window.turnstile) { window.turnstile.reset(); turnstileToken = ""; }
   });
+}
+
+// The page that asked for a link waits for it: opened here, in another tab or on another device, it signs this page in.
+let waitTimer = null;
+function showWaiting(code) {
+  $("signin-code").textContent = `Code ${code}`;
+  $("signin-wait").hidden = false;
+  waitForLink();
+}
+
+// A page loaded (or reloaded) while its link is out: take the sign-in if it was sent here already, or wait again.
+async function resumeWaiting() {
+  let result;
+  try {
+    result = await api("/api/auth/wait", {});
+  } catch { return; }
+  if (result.state === "signed_in") await boot();
+  else if (result.state === "waiting") {
+    $("signin-status").textContent = "A sign-in link is on its way to you.";
+    showWaiting(result.code);
+  }
+}
+
+function waitForLink() {
+  clearTimeout(waitTimer);
+  waitTimer = setTimeout(async () => {
+    if ($("signin").hidden) return;
+    if (document.hidden) return waitForLink();          // checked again when the page is looked at
+    let state = "waiting";
+    try {
+      state = (await api("/api/auth/wait", {})).state;
+    } catch { /* a dropped connection: keep waiting */ }
+    if (state === "signed_in") {
+      $("signin-wait").hidden = true;
+      $("signin-status").textContent = "";
+      await boot();
+    } else if (state === "expired") {
+      $("signin-wait").hidden = true;
+      $("signin-status").textContent = "That link has run out. Ask for a new one.";
+    } else {
+      waitForLink();
+    }
+  }, 2500);
 }
 
 async function verifyLink() {
@@ -165,18 +209,36 @@ async function verifyLink() {
   } else {
     $("verify-text").textContent = `Sign in to ${S.config.site} as ${info.email} on this device.`;
   }
-  $("verify-button").hidden = false;
-  $("verify-button").onclick = async () => {
-    $("verify-button").disabled = true;
+  // asked for on another device (or in another browser, such as the email app's): offer to sign that one in
+  const asked = info.asked_on;
+  if (asked) {
+    $("verify-text").textContent = `This link signs in ${info.email}. It was asked for on another device ` +
+      `(${asked.device}), which shows the code ${asked.code}. If that's yours, sign it in from here. ` +
+      "If you didn't ask for a link, don't: sign in here instead, or close this tab.";
+    $("verify-button").textContent = `Sign in the device showing ${asked.code}`;
+    $("verify-here").hidden = false;
+  }
+  const go = async (where) => {
+    $("verify-button").disabled = $("verify-here").disabled = true;
     try {
-      const result = await api("/api/auth/verify", { token });
+      const result = await api("/api/auth/verify", { token, where });
       history.replaceState(null, "", "/");
+      if (result.where === "asker") {
+        $("verify-title").textContent = "Done";
+        $("verify-text").textContent = `The device showing ${asked.code} signs in by itself in a moment. ` +
+          "You can close this tab.";
+        $("verify-button").hidden = $("verify-here").hidden = true;
+        return;
+      }
       await boot(result.claimed ? `${result.claimed}'s throws are in your account now.` : "");
     } catch (error) {
-      $("verify-button").disabled = false;
+      $("verify-button").disabled = $("verify-here").disabled = false;
       fail(error.message);
     }
   };
+  $("verify-button").hidden = false;
+  $("verify-button").onclick = () => go(asked ? "asker" : "here");
+  $("verify-here").onclick = () => go("here");
 }
 
 // ---------------------------------------------------------------- starting up
@@ -187,6 +249,8 @@ async function boot(message = "") {
     if (error.status !== 401) {
       showGate("signin");
       $("signin-status").textContent = error.message;
+    } else {
+      await resumeWaiting();
     }
     return;
   }
@@ -377,6 +441,7 @@ function setTab(tab, save = true) {
   $("tab-table").hidden = tab !== "table";
   $("tab-tracker").hidden = tab !== "tracker";
   $("roll-button").textContent = tab === "table" ? "Roll" : "Log throw";
+  $("virtual-button").hidden = tab !== "table";        // virtual dice settle bets; the tracker is for real throws
   if (save) saveSettings({ tab });
 }
 
@@ -401,6 +466,7 @@ function drawSlots() {
     slot.classList.toggle("next", S.dice.length === i);
   }
   $("roll-button").disabled = S.dice.length !== 2 || S.busy;
+  $("virtual-button").disabled = S.busy;
 }
 
 function pickDie(value) {
@@ -414,6 +480,7 @@ function setupEntry() {
   $("slot-1").addEventListener("click", () => { S.dice = S.dice.slice(0, 1); drawSlots(); });
   $("roll-button").addEventListener("click", rollDice);
   $("fix-button").addEventListener("click", fixLast);
+  $("virtual-button").addEventListener("click", virtualRoll);
   $("undo-button").addEventListener("click", undo);
   document.addEventListener("keydown", (event) => {
     if (!$("main").hidden && !document.querySelector("dialog[open]")) {
@@ -471,6 +538,20 @@ function rollDice() {
     S.dice = [];
     speak(result);
     status(result.message || "");
+    await refresh(true);
+  });
+}
+
+// The server throws random dice: for trying bets out without your own dice. The roll settles the table but
+// stays out of the tracker and the stats.
+function virtualRoll() {
+  sound.unlock();
+  if (S.mix.sfx) sound.diceRoll();
+  return busy(async () => {
+    const result = await api(`/api/players/${S.player}/virtual`, {});
+    S.dice = [];
+    speak(result);
+    status(result.message);
     await refresh(true);
   });
 }
@@ -596,7 +677,8 @@ function drawTable() {
     const li = item(rolls, "li");
     item(li, "span", roll.time);
     item(li, "span", `${roll.dice[0]}-${roll.dice[1]}${roll.back_wall ? ` = ${roll.total}` : ""}`);
-    item(li, "span", roll.back_wall ? (roll.game ? roll.note : "logged") : "no roll", "grow");
+    const what = roll.back_wall ? (roll.game ? roll.note : "logged") : "no roll";
+    item(li, "span", roll.virtual ? `${what} (virtual)` : what, "grow");
     item(li, "span", roll.net ? signed(roll.net) : "", roll.net > 0 ? "win" : roll.net < 0 ? "loss" : "");
   }
   if (!t.rolls.length) item(rolls, "li", "Nothing rolled yet.");
