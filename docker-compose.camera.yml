@@ -1,9 +1,12 @@
 # Lets the web server use the webcam plugged into this machine. Turn it on with this line in .env:
 #     COMPOSE_FILE=docker-compose.yml:docker-compose.camera.yml
-# If the camera isn't /dev/video0, change it here (ls /dev/video* lists them) and set CRAPS_CAMERA to match.
+# The camera shows up inside the container as /dev/video0, so CRAPS_CAMERA=0 always.
+# If the webcam isn't /dev/video0 on this machine (a laptop's own camera usually is), say which it is
+# with CRAPS_CAMERA_DEVICE in .env. The names in /dev/v4l/by-id/ don't change when the numbers do,
+# e.g. CRAPS_CAMERA_DEVICE=/dev/v4l/by-id/usb-046d_Logitech_BRIO_XXXXXXXX-video-index0
 services:
   web:
     devices:
-      - /dev/video0:/dev/video0
+      - ${CRAPS_CAMERA_DEVICE:-/dev/video0}:/dev/video0
     group_add:
       - video
