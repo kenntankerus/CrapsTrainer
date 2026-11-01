@@ -209,6 +209,24 @@ def test_tracker_log_and_stats():
     assert c.get(f"/api/players/{pid}/tracker").json()["rows"][0]["throws"] == 3
 
 
+def test_custom_hold_is_logged_as_the_set_it_is():
+    c = signed_in_client("custom@example.com")
+    pid = me(c)["players"][0]["id"]
+    messages = [c.post(f"/api/players/{pid}/roll", json={"die1": 3, "die2": 3, "mode": "tracker",
+                                                         "dice_set": f"Custom {hold}"}).json()["message"]
+                for hold in ("L3-2 R3-2", "L5-1 R5-1")]
+    assert messages == ["Logged 3-3 on Hardway 3-2", "Logged 3-3 on Custom L5-1 R5-1"]
+    names = {row["group"] for row in c.get(f"/api/players/{pid}/tracker").json()["rows"]}
+    assert {"Hardway 3-2", "Custom L5-1 R5-1"} <= names
+    view = c.get(f"/api/players/{pid}/tracker", params={"dice_set": "Custom L3-2 R3-2"}).json()
+    assert view["chart"]["n"] == 1                                 # the filter finds it under its real name
+    assert "Custom" in me(c)["sets"]
+    # the hold picked for each set is kept, and only holds that are that set
+    c.post("/api/me", json={"settings": {"holds": {"Straight Sixes": "6-5", "Hardway": "6-5"}}})
+    c.post("/api/me", json={"settings": {"holds": {"Hardway": "3-2"}}})
+    assert me(c)["settings"]["holds"] == {"Straight Sixes": "6-5", "Hardway": "3-2"}
+
+
 def test_guests_and_claim():
     host = signed_in_client("host@example.com")
     host.post("/api/me", json={"name": "Host"})

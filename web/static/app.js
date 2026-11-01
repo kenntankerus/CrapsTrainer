@@ -298,10 +298,13 @@ function fillControls() {
   const current = (s.dice_set || sets[0]);
   if (!sets.includes(current)) sets.push(current);
   fillPicker($("dice-set"), sets, current);
-  const setup = clear($("setup"));
-  option(setup, "", "Up-facing…");
-  for (const v of S.config.setups) option(setup, v);
-  setup.value = s.setup || "";
+  for (const [id, side, key] of [["custom-left", "Left", "custom_left"], ["custom-right", "Right", "custom_right"]]) {
+    const box = clear($(id));
+    option(box, "", `${side} up-facing…`);
+    for (const v of S.config.holds) option(box, v, `${side[0]} ${v}`);
+    box.value = s[key] || "";
+  }
+  $("hold").dataset.set = "";              // fill the hold picker again, from the settings
   showSetup();
 
   const positions = [...me.positions];
@@ -363,14 +366,31 @@ async function pickOther(select, title, key) {
   return true;
 }
 
+// The hold picker lists the holds that are the chosen set (Straight Sixes: 6-2 or 6-5), and shows the one
+// picked last for it. Custom picks each die's hold instead.
 function showSetup() {
-  $("setup").hidden = $("dice-set").value !== "Hardway";
+  const name = $("dice-set").value, holds = S.config.set_holds[name];
+  const box = $("hold");
+  box.hidden = !holds;
+  if (holds && box.dataset.set !== name) {
+    clear(box);
+    option(box, "", "Up-facing…");
+    for (const v of holds) option(box, v);
+    const saved = (S.settings.holds || {})[name] ?? (name === "Hardway" ? S.settings.setup : "");
+    box.value = holds.includes(saved) ? saved : "";
+  }
+  box.dataset.set = holds ? name : "";
+  $("custom-left").hidden = $("custom-right").hidden = name !== "Custom";
 }
 
+// The name throws are logged under. A Custom hold that is really a named set (both dice 3-2 is Hardway 3-2)
+// is renamed by the server, which knows the sets.
 function currentSet() {
   const name = $("dice-set").value === OTHER ? $("dice-set").dataset.last : $("dice-set").value;
-  const setup = $("setup").value;
-  return name === "Hardway" && setup ? `${name} ${setup}` : (name || "Unnamed");
+  const hold = $("hold").hidden ? "" : $("hold").value, left = $("custom-left").value, right = $("custom-right").value;
+  if (hold) return `${name} ${hold}`;
+  if (name === "Custom" && left && right) return `Custom L${left} R${right}`;
+  return name || "Unnamed";
 }
 
 function currentPosition() {
@@ -403,7 +423,14 @@ function setupControls() {
     syncCamera();
     if (S.tab === "tracker") refresh();
   });
-  $("setup").addEventListener("change", () => { saveSettings({ setup: $("setup").value }); syncCamera(); if (S.tab === "tracker") refresh(); });
+  $("hold").addEventListener("change", () => {
+    saveSettings({ holds: { ...(S.settings.holds || {}), [$("dice-set").value]: $("hold").value } });
+    syncCamera();
+    if (S.tab === "tracker") refresh();
+  });
+  for (const [id, key] of [["custom-left", "custom_left"], ["custom-right", "custom_right"]]) {
+    $(id).addEventListener("change", () => { saveSettings({ [key]: $(id).value }); syncCamera(); if (S.tab === "tracker") refresh(); });
+  }
   $("position").addEventListener("change", async () => {
     await pickOther($("position"), "New position", "position");
     syncCamera();

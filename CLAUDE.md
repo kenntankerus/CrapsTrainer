@@ -48,17 +48,21 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 
 ## Next up
 
-1. **Dice sets** (waiting on the owner's exact holds):
-   - The Hardway list (`HARDWAY_SETUPS` in `dice_stats.py`, shared with the desktop apps) wrongly offers all
-     24 up/facing holds. A real hardway set has both dice held alike with 2, 3, 4 and 5 on the rolling axis
-     (1 and 6 on the sides): only 2-3, 2-4, 3-2, 3-5, 4-2, 4-5, 5-3, 5-4 (face up - face toward the thrower).
-   - Add a **Custom** set: up and facing for the left die and for the right die, logged like `Custom L6-2 R6-2`.
-   - A Custom hold that is really a named set is logged under that name: match on what the set does (any
-     hardway-set hold is Hardway; every rolling pair summing to 7 is All Sevens; left/right swapped is the same
-     set). The owner will give the holds for 3-V, All Sevens, Parallel, Cross-Sixes and Axis.
-   - The throws logged as "Hardway 6-2" (107 in the older copy of the log) were both dice sixes up, twos facing:
-     relabel them `Custom L6-2 R6-2` (or the named set it turns out to be). They're in the server's database now,
-     so the relabel is a one-off database update there, plus `dice_throws.csv` in the repo.
+1. **Dice sets: the named holds** (waiting on the owner's holds for 3-V, Parallel Sixes, Cross-Sixes and Axis).
+   - Every throw logs its hold, the face toward the shooter included: `Straight Sixes 6-5` (both dice alike),
+     `All Sevens L6-2 R1-5`, `Hardway 3-2`, `Custom L5-1 R5-1`. The web app's hold picker lists the holds that are
+     the chosen set (`SET_HOLDS` in `dice_stats.py`); Custom picks each die. The owner asked for this knowing it
+     may get busy in the tracker, and may simplify it later.
+   - `set_name` logs a Custom hold that is a set under that set's name. Hardway is both dice alike with 2, 3, 4, 5
+     rolling (8 holds); All Sevens is every rolling pair adding up to 7; a set in `NAMED_HOLDS` is matched on
+     the same top pair, then the same pairs either way the dice turn, left and right swapped the same (`same_set`).
+   - **Straight Sixes** is 6-2 or 6-5 on both dice. `L5-1 R5-1` rolls the same pairs with fives on top; the owner
+     wants it kept Custom. "Parallel" is renamed **Parallel Sixes**.
+   - Done in the server's database (backup from before: `data/craps-before-relabel-20261101.db`) and
+     `dice_throws.csv`: old "Hardway 6-2" / "6-5" are `Straight Sixes 6-2` / `6-5`, "Hardway 5-1" is
+     `Custom L5-1 R5-1`, "Parallel" is Parallel Sixes. Older throws of the other sets have no hold recorded.
+   - Left: add the owner's holds to `NAMED_HOLDS`, then relabel any Custom throws that turn out to be named.
+   - The desktop apps get the new set names and the 8 Hardway holds, but no hold picker for the other sets.
 2. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
 3. **Finish the server** (`web/README.md`): turn on the camera lines in `.env` and tune it, fetch the free voice
