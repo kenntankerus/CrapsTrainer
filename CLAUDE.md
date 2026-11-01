@@ -61,14 +61,18 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
     `Custom L5-1 R5-1`, "Parallel" is Parallel Sixes. Older 3-V, All Sevens, Cross-Sixes and Parallel Sixes throws
     have no hold recorded.
   - The desktop apps get the set names and the 8 Hardway holds, but no hold picker for the other sets.
-- Never tried for real yet: the Brio webcam on Linux (camera lines in `.env` still off; needs tuning with the
-  Tune window; Windows exposure -3 maps to 1250), edge-tts, ElevenLabs and Kokoro.
+- **The camera is on** (the Brio, by its `/dev/v4l/by-id` name in `CRAPS_CAMERA_DEVICE`). Tuned in the server's
+  `data/dice_settings.json`: exposure 400 + gain 70 (~14 pictures a second), `roi` [420, 0, 1665, 1080] (the felt;
+  the top edge stays at 0 because dice land in the top-right corner). The dice model is trained on the server
+  (780 pictures, 99% right when sure). Movement is checked against the picture 0.25 s earlier (`MOTION_SPAN`),
+  since at 14 a second a slow slide looked still and a moving die got read. First real run: 10 of 15 read right.
+- Never tried for real yet: edge-tts, ElevenLabs and Kokoro.
 
 ## Next up
 
 1. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
-2. **Finish the server** (`web/README.md`): turn on the camera lines in `.env` and tune it, fetch the free voice
+2. **Finish the server** (`web/README.md`): fetch the free voice
    (`docker compose exec web python -m web.get_voices`, then `--prepare`), record room and crowd sounds
    (`python -m web.make_sounds`, needs the ElevenLabs key), and add the backup crontab lines.
 3. **The server is the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,

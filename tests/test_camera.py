@@ -9,6 +9,7 @@ import os
 import threading
 import time
 
+import numpy as np
 import pytest
 
 from test_web import me, signed_in_client
@@ -131,3 +132,45 @@ def test_retrain_needs_enough_pictures(demo_camera):
     c = signed_in_client(EMAIL)
     r = c.post("/api/camera/train").json()
     assert r["ok"] is False and "each face needs at least" in r["report"]
+
+
+class SlidingCapture:
+    """14 pictures a second, like the Brio on the server: two dice sit still (the starting picture), then
+    a new pair slides slowly across the carpet for four seconds, a pixel a picture, and stops."""
+
+    def __init__(self):
+        self.started = time.perf_counter()
+
+    def read(self):
+        time.sleep(1 / 14)
+        t = time.perf_counter() - self.started
+        frame = np.zeros((1080, 1920, 3), np.uint8)
+        frame[:] = (60, 30, 120)                                     # the carpet
+        if t < 3:
+            values, x = (1, 2), 600
+        else:
+            values, x = (5, 6), 600 + 14 * min(t - 3, 4)            # slides from 3 s to 7 s, then sits
+        camera_demo.draw_die(frame, values[0], int(x), 500, 10)
+        camera_demo.draw_die(frame, values[1], int(x) + 200, 520, 30)
+        return True, cv2.GaussianBlur(frame, (9, 9), 0)            # a real lens isn't razor sharp
+
+    def isOpened(self):
+        return True
+
+    def release(self):
+        pass
+
+
+def test_slow_slide_is_still_moving():
+    # Checked picture to picture, 14 a second is too fast to see a slow slide, and dice still moving got read
+    import dice_vision as dv
+    cam = dv.DiceCamera(capture=SlidingCapture())
+    cam.start()
+    try:
+        started = time.perf_counter()
+        kind, payload = cam.events.get(timeout=20)
+        reported_at = time.perf_counter() - started
+    finally:
+        cam.stop()
+    assert kind == "throw" and payload["dice"] == (5, 6)
+    assert reported_at > 7, f"reported at {reported_at:.1f} s, while the dice were still sliding"

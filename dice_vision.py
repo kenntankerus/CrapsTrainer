@@ -55,6 +55,9 @@ STILL_SECONDS = 0.35            # how long the dice must sit still before the th
 WARMUP_SECONDS = 1.5            # nothing is read this soon after the camera starts: the lens is still moving to FOCUS
 READ_AFTER = 0.12               # start reading the dice this long after they stop (earlier frames often still rock)
 MIN_VOTE_FRAMES = 4             # never report on fewer readings than this, even on a slow camera
+MOTION_SPAN = 0.25              # each picture is checked for movement against the one this long before it, so a die
+                                # sliding slowly still counts as moving on a fast camera (14 pictures a second shows
+                                # too little change from one picture to the next); on a slow camera it's the last one
 MOTION_THRESHOLD = 1.5          # how much picture change counts as "moving"
 MOTION_PIXELS = 60              # this many changed pixels (in the 480-wide copy) also counts, so small dice landing are noticed
 AGREEMENT_NEEDED = 0.7          # share of frames that must agree on the reading
@@ -486,7 +489,7 @@ class DiceCamera:
     # ---- the background loop
     def _run(self):
         cap = self._cap
-        previous = None
+        history = deque()               # (time, small picture) back to the newest one at least MOTION_SPAN old
         still_since = None              # when the picture last stopped moving
         armed = True                    # True = ready to report the next settled throw
         baseline = None                 # small picture from the last report, to notice dice appearing quietly
@@ -518,13 +521,15 @@ class DiceCamera:
             # Motion check on a small, blurred copy of the picture
             small = cv2.resize(frame, (480, 270), interpolation=cv2.INTER_AREA)
             small = cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (5, 5), 0)
-            if previous is None:
+            history.append((now, small))
+            while len(history) > 2 and now - history[1][0] >= MOTION_SPAN:
+                history.popleft()
+            if len(history) < 2:
                 moving = True
             else:
-                diff = cv2.absdiff(small, previous)
+                diff = cv2.absdiff(small, history[0][1])
                 moving = (float(np.mean(diff)) > MOTION_THRESHOLD
                           or cv2.countNonZero(cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]) > MOTION_PIXELS)
-            previous = small
             moving = moving or now - started < WARMUP_SECONDS
 
             if moving:

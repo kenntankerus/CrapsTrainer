@@ -187,10 +187,22 @@ CRAPS_CAMERA_USERS=you@example.com
 COMPOSE_FILE=docker-compose.yml:docker-compose.camera.yml
 ```
 
-The last line hands the webcam to the container. If the laptop's own camera is also there, the
-Brio may not be `/dev/video0`: `sudo apt install v4l-utils` and `v4l2-ctl --list-devices` shows
-which is which (each camera usually lists two devices; the first is the picture). Put the right one in
-`docker-compose.camera.yml` and set `CRAPS_CAMERA` to its number.
+The last line hands the webcam to the container, where it is always `/dev/video0` (so `CRAPS_CAMERA=0`).
+If the laptop's own camera is also there, the Brio may not be `/dev/video0` on the laptop: name it by its
+fixed name in `/dev/v4l/by-id/` (`ls /dev/v4l/by-id/`; the picture is the one ending `video-index0`):
+
+```
+CRAPS_CAMERA_DEVICE=/dev/v4l/by-id/usb-046d_Logitech_BRIO_XXXXXXXX-video-index0
+```
+
+**Tuning.** The reading settings live in `data/dice_settings.json`. The Tune window on the page changes
+most of them live (and Retrain builds the dice model there, as `python -m web.train` does). Two notes from
+tuning the Brio on Linux:
+
+- Exposure is in tenths of a millisecond there. The Windows -3 (1250) gave only 4 pictures a second;
+  400 with gain 70 gives about 14 (the most this laptop decodes at 1920x1080) and still reads the dice.
+- The search area, `roi` ([left, top, right, bottom] in a 1920-wide picture), keeps the reader on the felt:
+  the wood around it was read as dice. It isn't in the Tune window yet; edit the file and restart.
 
 Then press **Start camera** on the page. Throws go to the player picked at the top, on the tab you're
 on: the Table settles bets, the Tracker only logs. Switching player or tab moves the camera with you.
