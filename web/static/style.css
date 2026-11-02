@@ -154,8 +154,9 @@ table.stats td:first-child, table.stats th:first-child { text-align: left; }
 .camera-side { flex: 1; min-width: 240px; }
 .camera-row { margin-top: 0; }
 #camera-status { margin: 10px 0 0; }
-#camera-preview { display: block; width: min(400px, 100%); border-radius: 8px; background: var(--inset); aspect-ratio: 16 / 9; }
-#tune-preview { display: block; width: 100%; border-radius: 8px; background: var(--inset); aspect-ratio: 16 / 9; margin: 10px 0; }
+/* the camera's own shape once a picture is in (a camera turned on its side sends a tall one), 16:9 until then */
+#camera-preview { display: block; width: min(400px, 100%); max-height: 50vh; object-fit: contain; border-radius: 8px; background: var(--inset); aspect-ratio: auto 16 / 9; }
+#tune-preview { display: block; width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; background: var(--inset); aspect-ratio: auto 16 / 9; margin: 10px 0; }
 .sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) 4.5em; gap: 6px 10px; align-items: center; }
 .sliders input[type="range"] { width: 100%; min-height: 32px; padding: 0; accent-color: var(--gold); border: 0; background: transparent; }
 .sliders output { text-align: right; font-variant-numeric: tabular-nums; }

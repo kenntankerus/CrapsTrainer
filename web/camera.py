@@ -24,7 +24,8 @@ SETTINGS_FILE = os.path.join(config.DATA_DIR, "dice_settings.json")
 # what the tuning page may change, and the range each may take
 LIMITS = {"hue_low": (0, 179), "hue_high": (0, 179), "sat_low": (0, 255), "val_low": (0, 255),
           "white_level": (0, 255), "min_die_area": (50, 20000), "two_dice_area": (500, 40000),
-          "exposure_linux": (1, 10000), "exposure": (-13, 0), "focus": (0, 255), "gain": (0, 255)}
+          "exposure_linux": (1, 10000), "exposure": (-13, 0), "focus": (0, 255), "gain": (0, 255),
+          "rotate": (0, 270), "white_balance": (2000, 7500)}
 
 try:
     import dice_vision as dv
@@ -218,6 +219,8 @@ class CameraService:
                 if not isinstance(value, (int, float)):
                     raise CameraError(f"{key} must be a number.")
                 value = int(min(high, max(low, value)))
+                if key == "rotate":
+                    value = round(value / 90) * 90          # quarter turns only
             setattr(dv, names[key], value)
         camera = self.camera
         if camera is not None:
