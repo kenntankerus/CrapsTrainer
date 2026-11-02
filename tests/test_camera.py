@@ -9,6 +9,7 @@ import os
 import threading
 import time
 
+import numpy as np
 import pytest
 
 from test_web import me, signed_in_client
@@ -131,3 +132,109 @@ def test_retrain_needs_enough_pictures(demo_camera):
     c = signed_in_client(EMAIL)
     r = c.post("/api/camera/train").json()
     assert r["ok"] is False and "each face needs at least" in r["report"]
+
+
+def test_camera_on_its_side(monkeypatch):
+    # Turned 90 degrees on its mount the camera sends a tall picture; ROTATE turns it back so the shooter's
+    # left is the picture's left, and the dice are the same size either way up
+    import dice_vision as dv
+    _, frame = camera_demo.DemoCapture([(5, 2)], fps=1000, tumble=0.0, rest=10).read()
+    sideways = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    assert len(dv.find_dice(sideways)) == 2
+    monkeypatch.setattr(dv, "ROTATE", 90)
+    turned = dv.turn(sideways)
+    assert (turned == frame).all()
+    assert [d["value"] for d in dv.find_dice(turned)] == [5, 2]
+    camera.service.tune({"rotate": 100})
+    assert dv.ROTATE == 90
+
+
+def test_die_washed_out_by_glare(monkeypatch):
+    # A light above the table can bleach a die's green to beige; with the felt's colour given, a die-sized spot
+    # ringed by felt is still a die. A light spot on the black laptop at the near end isn't ringed by felt,
+    # and spots of sun on the felt are still felt.
+    import dice_vision as dv
+    frame = np.full((1080, 1920, 3), (60, 30, 120), np.uint8)              # red felt
+    camera_demo.draw_die(frame, 3, 600, 500, 20)
+    pale = np.zeros_like(frame)
+    camera_demo.draw_die(pale, 5, 1100, 500, 10)
+    die = pale.any(axis=2)
+    frame[die] = pale[die]
+    body = die & (pale[..., 0] < 200)                                       # the pips stay white
+    frame[body] = (0.1 * pale[body] + 0.9 * np.array([170, 205, 230])).astype(np.uint8)   # glare
+    sun = cv2.cvtColor(np.uint8([[[154, 70, 250]]]), cv2.COLOR_HSV2BGR)[0, 0].tolist()
+    for x in range(700, 1500, 100):                                        # sun through a shade: a row of spots
+        cv2.ellipse(frame, (x, 800), (42, 32), 0, 0, 360, sun, -1)
+    frame[900:1080, 0:500] = (25, 20, 35)                                    # the laptop, touching the edge
+    frame[950:1010, 200:260] = (210, 215, 220)                               # a key, light and die-sized
+    frame = cv2.GaussianBlur(frame, (9, 9), 0)
+    felt_hue = int(cv2.cvtColor(np.uint8([[[60, 30, 120]]]), cv2.COLOR_BGR2HSV)[0, 0, 0])
+
+    monkeypatch.setattr(dv, "FELT_HUE", None)
+    assert [d["value"] for d in dv.find_dice(frame)] == [3]
+    monkeypatch.setattr(dv, "FELT_HUE", felt_hue)
+    assert [d["value"] for d in dv.find_dice(frame)] == [3, 5]
+
+
+def test_die_seen_at_a_slant(monkeypatch):
+    # Far from the spot under the camera a die shows the side facing it too, here three pips below a 4.
+    # Trimmed to its top face (NADIR and TILT), only the 4 is counted.
+    import dice_vision as dv
+    frame = np.full((1080, 1920, 3), (60, 30, 120), np.uint8)
+    camera_demo.draw_die(frame, 4, 960, 150, 0)
+    frame[180:200, 930:990] = (60, 170, 40)                                # the side face, towards the camera
+    for x in (942, 960, 978):
+        cv2.circle(frame, (x, 190), 5, (245, 245, 245), -1)
+    frame = cv2.GaussianBlur(frame, (5, 5), 0)
+
+    monkeypatch.setattr(dv, "TILT", None)
+    assert [d["pips"] for d in dv.find_dice(frame)] == [7]
+    monkeypatch.setattr(dv, "NADIR", [960, 1000])
+    monkeypatch.setattr(dv, "TILT", 0.024)
+    assert [(d["pips"], d["value"]) for d in dv.find_dice(frame)] == [(4, 4)]
+    # Trimmed too hard (the side face in shadow shows less than TILT allows), the top loses pips; then the
+    # pips farthest from the camera's spot that make a face are taken
+    monkeypatch.setattr(dv, "TILT", 0.06)
+    assert [(d["pips"], d["value"]) for d in dv.find_dice(frame)] == [(4, 4)]
+
+
+class SlidingCapture:
+    """14 pictures a second, like the Brio on the server: two dice sit still (the starting picture), then
+    a new pair slides slowly across the carpet for four seconds, a pixel a picture, and stops."""
+
+    def __init__(self):
+        self.started = time.perf_counter()
+
+    def read(self):
+        time.sleep(1 / 14)
+        t = time.perf_counter() - self.started
+        frame = np.zeros((1080, 1920, 3), np.uint8)
+        frame[:] = (60, 30, 120)                                     # the carpet
+        if t < 3:
+            values, x = (1, 2), 600
+        else:
+            values, x = (5, 6), 600 + 14 * min(t - 3, 4)            # slides from 3 s to 7 s, then sits
+        camera_demo.draw_die(frame, values[0], int(x), 500, 10)
+        camera_demo.draw_die(frame, values[1], int(x) + 200, 520, 30)
+        return True, cv2.GaussianBlur(frame, (9, 9), 0)            # a real lens isn't razor sharp
+
+    def isOpened(self):
+        return True
+
+    def release(self):
+        pass
+
+
+def test_slow_slide_is_still_moving():
+    # Checked picture to picture, 14 a second is too fast to see a slow slide, and dice still moving got read
+    import dice_vision as dv
+    cam = dv.DiceCamera(capture=SlidingCapture())
+    cam.start()
+    try:
+        started = time.perf_counter()
+        kind, payload = cam.events.get(timeout=20)
+        reported_at = time.perf_counter() - started
+    finally:
+        cam.stop()
+    assert kind == "throw" and payload["dice"] == (5, 6)
+    assert reported_at > 7, f"reported at {reported_at:.1f} s, while the dice were still sliding"

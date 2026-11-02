@@ -129,6 +129,7 @@ def main():
         if not ok:
             print("Lost the camera feed.")
             break
+        frame = dv.turn(frame)                   # the way up the tracker reads it (ROTATE in dice_settings.json)
 
         # --- motion detection: compare this frame to the previous one
         gray_small = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (9, 9), 0)

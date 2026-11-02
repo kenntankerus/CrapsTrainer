@@ -187,10 +187,41 @@ CRAPS_CAMERA_USERS=you@example.com
 COMPOSE_FILE=docker-compose.yml:docker-compose.camera.yml
 ```
 
-The last line hands the webcam to the container. If the laptop's own camera is also there, the
-Brio may not be `/dev/video0`: `sudo apt install v4l-utils` and `v4l2-ctl --list-devices` shows
-which is which (each camera usually lists two devices; the first is the picture). Put the right one in
-`docker-compose.camera.yml` and set `CRAPS_CAMERA` to its number.
+The last line hands the webcam to the container, where it is always `/dev/video0` (so `CRAPS_CAMERA=0`).
+If the laptop's own camera is also there, the Brio may not be `/dev/video0` on the laptop: name it by its
+fixed name in `/dev/v4l/by-id/` (`ls /dev/v4l/by-id/`; the picture is the one ending `video-index0`):
+
+```
+CRAPS_CAMERA_DEVICE=/dev/v4l/by-id/usb-046d_Logitech_BRIO_XXXXXXXX-video-index0
+```
+
+**Tuning.** The reading settings live in `data/dice_settings.json`. The Tune window on the page changes
+most of them live (and Retrain builds the dice model there, as `python -m web.train` does). Two notes from
+tuning the Brio on Linux:
+
+- Exposure is in tenths of a millisecond there. The Windows -3 (1250) gave only 4 pictures a second;
+  400 with gain 70 gives about 14 (the most this laptop decodes at 1920x1080) and still reads the dice.
+- The search area, `roi` ([left, top, right, bottom] of the picture as read), keeps the reader on the felt:
+  the wood around it was read as dice. Take in the walls, or a die against one gets cut off and misread.
+- `white_balance` (kelvin) fixes the colours. Left automatic, they shift with what fills the picture: with
+  the red felt filling it the dice came out yellow and weren't found. 4000 keeps the felt purple.
+- `rotate` (0, 90, 180 or 270, clockwise) is for a camera turned on its side, to see more of a long table.
+  It turns the picture back so the back wall is at the top and the shooter's left is the picture's left;
+  `roi` is then measured in the turned picture.
+- `felt_hue` (OpenCV's 0-179; this red felt is 172) finds dice that glare has bleached to beige: a die-sized
+  spot that isn't felt, with felt all round it. Without it only green counts, and a light over the table loses
+  the dice under it. A die against a wall isn't ringed by felt, so that one still needs its green.
+  Spots of sun through a window shade are brighter, paler, pinker felt and stay felt (`FELT_HUE_RANGE`,
+  `FELT_SAT_LOW` in `dice_vision.py`).
+- `hue_high` 92 rather than 100: these dice are about 60-77, and a bluish strip by the laptop at 100 was read as a die.
+- `nadir` ([x, y], the spot straight under the camera in the picture as read) and `tilt` are for dice seen at a
+  slant. Away from that spot a die shows the side facing the camera as well, and the side's pips were counted
+  with the top's (a 4 with three pips of its side read as unclear). The reader takes the most pips, farthest
+  from `nadir` first, that make a face. `tilt` (the side face's width per pixel from `nadir`) trims a die to its
+  top face, for the two-dice test (a slanted die is long, like two dice touching) and when no pips make a face.
+  Here [540, 1020] and 0.025, found by trying values on pictures the camera couldn't read.
+- `roi`, `rotate`, `white_balance`, `felt_hue`, `nadir` and `tilt` aren't in the Tune window yet: edit the file
+  and restart the app.
 
 Then press **Start camera** on the page. Throws go to the player picked at the top, on the tab you're
 on: the Table settles bets, the Tracker only logs. Switching player or tab moves the camera with you.

@@ -61,14 +61,30 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
     `Custom L5-1 R5-1`, "Parallel" is Parallel Sixes. Older 3-V, All Sevens, Cross-Sixes and Parallel Sixes throws
     have no hold recorded.
   - The desktop apps get the set names and the 8 Hardway holds, but no hold picker for the other sets.
-- Never tried for real yet: the Brio webcam on Linux (camera lines in `.env` still off; needs tuning with the
-  Tune window; Windows exposure -3 maps to 1250), edge-tts, ElevenLabs and Kokoro.
+- **The camera is on** (the Brio, by its `/dev/v4l/by-id` name in `CRAPS_CAMERA_DEVICE`), turned a quarter turn on its
+  mount so the picture's long side runs along the table. Tuned in the server's `data/dice_settings.json`: `rotate` 270
+  (turns the picture back: back wall at the top, the shooter's end at the bottom), `white_balance` 4000 (automatic
+  white balance turned the dice yellow once the red felt filled the picture), exposure 400 + gain 70 (~14 pictures a
+  second), `roi` [0, 80, 1080, 1700] in the turned picture (both side walls and the back wall in, down to the laptop at
+  the near end; the camera has to be that high for the table's width to fit). Glare: a light above (it can't be
+  moved) bleaches dice in the middle of the table to beige; `felt_hue` 172 finds them as die-sized spots ringed by
+  felt, and their pips still read. Sun through the window shade lands on the felt in die-sized spots; they count as felt
+  (pinker and paler, where the bleached die goes orange). `hue_high` is 92: a bluish strip by the laptop at 100 read as a die. Dice at the far end are seen at a
+  slant and show a side face too: the reader takes the most pips farthest from `nadir` [540, 1020] that make a
+  face, and `tilt` 0.025 trims a die to its top for the two-dice test. On the 24 unread pictures of two runs:
+  9 read right without this, 15 with. At night (a lamp) the dice look nearly black and are found as not-felt
+  spots, not by green. Still missed: dice pressed against a side wall (at night neither green nor ringed by felt). The dice model is trained on the
+  server (780 pictures, 99% right when sure). Movement is checked against the picture 0.25 s earlier
+  (`MOTION_SPAN`): at 14 a second a slow slide looked still and a moving die got read. Runs before turning it:
+  10 of 15 read right, then 29 of 35 (the misses were dice out of the picture, or cut off at a wall).
+- The camera keeps running on the server after the page is closed: stop it first, or restart the app.
+- Never tried for real yet: edge-tts, ElevenLabs and Kokoro.
 
 ## Next up
 
 1. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
-2. **Finish the server** (`web/README.md`): turn on the camera lines in `.env` and tune it, fetch the free voice
+2. **Finish the server** (`web/README.md`): fetch the free voice
    (`docker compose exec web python -m web.get_voices`, then `--prepare`), record room and crowd sounds
    (`python -m web.make_sounds`, needs the ElevenLabs key), and add the backup crontab lines.
 3. **The server is the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,
