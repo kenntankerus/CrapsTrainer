@@ -133,6 +133,15 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 
 ## Next up
 
+0. **Before telling people about the site** (the owner's to do; the rest of that review is done):
+   - A Cloudflare rate-limiting rule on `/api/` (the free plan has one), e.g. 100 requests per 10 s per address,
+     leaving out `/api/camera/` (the page sends up to 10 pictures a second). Nothing else limits a signed-in
+     script posting rolls, which would grow the database on the laptop.
+   - The table laptop: logs in by itself, Terminal pinned, and `kenn` is in the `docker` group (as good as root,
+     and `.env` holds the keys). Before guests are around, finish kiosk mode (item 3) and unpin Terminal.
+   - SSH: `PasswordAuthentication no` (it's not set, so passwords work); only reachable on the home network.
+     Check `sudo ufw status` while at it.
+
 1. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
 2. **Finish the server** (`web/README.md`): fetch the free voice

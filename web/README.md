@@ -148,8 +148,13 @@ up any cloud storage with `rclone config` (Cloudflare R2, Backblaze B2, Google D
 a second line, for example:
 
 ```
-45 3 * * * rclone sync ~/CrapsTrainer/data remote:craps-backup --exclude "voice_cache/**"
+45 3 * * * cd ~/CrapsTrainer && rclone sync data remote:craps-backup --exclude "voice_cache/**" --exclude "models/**" --exclude "craps.db*" --exclude "backup.log" >> data/backup.log 2>&1
 ```
+
+It leaves out the live database (the nightly copies in `backups/` are the safe ones; a copy taken while the
+app writes may not open) and `backup.log`, which this same line is writing to: uploading a file that grows
+while it's sent fails every night, and that noise would hide a real failure. Things that can be fetched or
+made again (the voice clips and the voice model) stay behind too.
 
 To restore: stop the app, copy a backup over `data/craps.db`, start it again.
 
@@ -158,6 +163,9 @@ To restore: stop the app, copy a backup over `data/craps.db`, start it again.
 ```
 cd ~/CrapsTrainer && git pull && docker compose up -d --build
 ```
+
+The system updates itself, but the Python base image and the tunnel's `cloudflared` only change when they're
+fetched again: every month or so, `docker compose pull --ignore-buildable && docker compose build --pull && docker compose up -d`.
 
 ### If it outgrows the laptop
 

@@ -54,7 +54,7 @@ def check_turnstile(token, ip):
         return False
 
 
-def new_link(email, ip, purpose="login", player_id=None, wait=None, agent=""):
+def new_link(email, ip, purpose="login", player_id=None, wait=None, agent="", sent_by=None):
     """Store a link for this address and return (its token, the code the asking device shows).
     wait is the asking device's secret, for sending the sign-in back to it. Raises AuthError when too many were asked for."""
     now = time.time()
@@ -65,13 +65,16 @@ def new_link(email, ip, purpose="login", player_id=None, wait=None, agent=""):
                         f"{config.LINK_MINUTES} minutes.")
     if ip and db.one("SELECT COUNT(*) FROM links WHERE ip = ? AND created > ?", ip, now - 3600)[0] >= config.LINKS_PER_IP:
         raise AuthError("Too many sign-in emails from here. Try again in an hour.")
+    if sent_by is not None and db.one("SELECT COUNT(*) FROM links WHERE sent_by = ? AND created > ?",
+                                      sent_by, now - 86400)[0] >= config.INVITES_PER_DAY:
+        raise AuthError("That's a lot of guest emails for one day. Try again tomorrow.")
     token = secrets.token_urlsafe(32)
     code = f"{secrets.randbelow(10000):04d}" if wait else ""
     db.connect().execute(
-        "INSERT INTO links (token_hash, email, ip, purpose, player_id, created, expires, wait_hash, code, agent) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO links (token_hash, email, ip, purpose, player_id, created, expires, wait_hash, code, agent, sent_by) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (_hash(token), email, ip or "", purpose, player_id, now, now + window, _hash(wait) if wait else None, code,
-         (agent or "")[:200]))
+         (agent or "")[:200], sent_by))
     db.connect().execute("DELETE FROM links WHERE created < ?", (now - 7 * 86400,))
     return token, code
 

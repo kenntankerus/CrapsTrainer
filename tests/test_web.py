@@ -249,6 +249,21 @@ def test_guests_and_claim():
     assert other.get(f"/api/players/{me(host)['players'][0]['id']}/table").status_code == 404
 
 
+def test_guest_emails_are_capped_per_account(monkeypatch):
+    monkeypatch.setattr(config, "INVITES_PER_DAY", 2)
+    host = signed_in_client("inviter@example.com")
+    gid = host.post("/api/players", json={"name": "Pat"}).json()["id"]
+    for n in range(2):
+        assert host.post(f"/api/players/{gid}/invite", json={"email": f"pat{n}@example.com"}).status_code == 200
+    r = host.post(f"/api/players/{gid}/invite", json={"email": "pat9@example.com"})
+    assert r.status_code >= 400 and "tomorrow" in r.json()["error"]
+    assert SENT[-1][0] == "pat1@example.com"
+    # another account has its own allowance
+    other = signed_in_client("inviter2@example.com")
+    oid = other.post("/api/players", json={"name": "Lee"}).json()["id"]
+    assert other.post(f"/api/players/{oid}/invite", json={"email": "lee@example.com"}).status_code == 200
+
+
 def test_reset_and_export_and_delete():
     c = signed_in_client("leaver@example.com")
     pid = me(c)["players"][0]["id"]
