@@ -75,7 +75,8 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   reader; the page restarts it on a 410. Tested with headless Windows Chrome fed a video of drawn dice
   (`--use-file-for-fake-video-capture`, driven over its debugging port from Windows Python). **Works on the Brio**
   (PRs #13-#15, live): 34 of 34 throws read right on 2026-11-04 with both dice on the felt, none fixed by hand.
-  Left over: a die-sized patch of the wood by the back wall's top-right corner read as a die in 4 pictures.
+  The 4 unclear pictures that night (something read as a die at the back wall, all within a minute) were likely
+  the cat on the box: nothing to tune unless it comes back.
   The Brio's controls can be read and tried from this laptop: headless Windows Chrome (`--remote-debugging-port`,
   `--use-fake-ui-for-media-stream`) on https://craps.kbmoto.net, `getCapabilities` / `applyConstraints`.
   The Brio now hangs off the owner's Windows laptop, not the server, so the server's `.env` must not hand the
