@@ -73,7 +73,11 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   exposure burned the dice white, and without the gain the same exposure came out black one time, right the next). `roi` now ends at 1530: the
   Windows laptop's lit screen at the near end read as dice. 10 s with no picture stops the
   reader; the page restarts it on a 410. Tested with headless Windows Chrome fed a video of drawn dice
-  (`--use-file-for-fake-video-capture`, driven over its debugging port from Windows Python); not yet on the Brio.
+  (`--use-file-for-fake-video-capture`, driven over its debugging port from Windows Python). **Works on the Brio**
+  (PRs #13-#15, live): 34 of 34 throws read right on 2026-11-04 with both dice on the felt, none fixed by hand.
+  Left over: a die-sized patch of the wood by the back wall's top-right corner read as a die in 4 pictures.
+  The Brio's controls can be read and tried from this laptop: headless Windows Chrome (`--remote-debugging-port`,
+  `--use-fake-ui-for-media-stream`) on https://craps.kbmoto.net, `getCapabilities` / `applyConstraints`.
   The Brio now hangs off the owner's Windows laptop, not the server, so the server's `.env` must not hand the
   container a camera device (`COMPOSE_FILE` with `docker-compose.camera.yml`) or the container won't start.
 - `tests/test_camera.py::test_unclear_read_goes_with_typed_dice` fails outside UTC (the dev laptop); CI runs in UTC.
