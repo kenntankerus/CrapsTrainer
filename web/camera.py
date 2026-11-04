@@ -18,7 +18,7 @@ import queue
 import threading
 import time
 
-from . import config, events, tables
+from . import camera_profiles, config, events, tables
 
 log = logging.getLogger("craps.camera")
 
@@ -59,6 +59,17 @@ def setup():
     if os.path.exists(SETTINGS_FILE):
         dv.load_settings(SETTINGS_FILE)
     dv.load_model(os.path.join(config.DATA_DIR, "dice_model.npz"))
+    _set_defaults()
+
+
+def _set_defaults():
+    """What a camera with no settings of its own reads with: the ones in data/dice_settings.json."""
+    try:
+        with open(SETTINGS_FILE) as f:
+            white_balance = json.load(f).get("white_balance")
+    except (OSError, ValueError, AttributeError):
+        white_balance = None
+    camera_profiles.set_defaults(dv.current_settings(), page_camera(), white_balance)
 
 
 def allowed(user):
@@ -130,6 +141,7 @@ class CameraService:
         self.error = ""
         self._pump = None
         self.pictures = None         # PagePictures when the page sends the pictures, None for the server's webcam
+        self.profile = None          # the settings the page's camera reads with (camera_profiles), while it reads
 
     # ---------------------------------------------------------------- starting and stopping
     def _source(self):
@@ -139,13 +151,14 @@ class CameraService:
             return None, DemoCapture()
         return (int(source) if source.isdigit() else source), None
 
-    def start(self, user, client, binding, from_page=False):
+    def start(self, user, client, binding, from_page=False, camera_name=""):
         """Start reading for this user: from the pictures their page sends (from_page), or from the server's webcam.
         Already reading for them, the throws go to this page and its player now (and from_page switches over)."""
         with self.lock:
             if self.camera is not None and self.owner and self.owner["user_id"] != user["id"]:
                 raise CameraError(f"{self.owner['user_name']} is using the camera.")
-            if self.camera is not None and (self.pictures is not None) == from_page:
+            same_camera = not from_page or (self.profile or {}).get("_camera") == camera_profiles.camera_key(camera_name)
+            if self.camera is not None and (self.pictures is not None) == from_page and same_camera:
                 self.owner = self._owner(user, client, binding)
                 return
         if self.camera is not None:
@@ -154,6 +167,10 @@ class CameraService:
             if self.camera is not None:          # someone started it in between
                 raise CameraError(f"{self.owner['user_name']} is using the camera.")
             if from_page:
+                # this camera's own settings, or the defaults: one reader at a time, so they're the reader's now
+                values, _ = camera_profiles.effective(user["id"], camera_name)
+                dv.apply_settings(camera_profiles.reader_part(values))
+                self.profile = {**values, "_camera": camera_profiles.camera_key(camera_name)}
                 pictures = PagePictures()
                 # the page sends its picture as it shows it, turned by its own Turn button
                 camera = dv.DiceCamera(None, pictures, turn_pictures=False)
@@ -165,6 +182,9 @@ class CameraService:
                 camera = dv.DiceCamera(index, capture)
             if not camera.start():
                 self.error = camera.error
+                if from_page:
+                    dv.apply_settings(camera_profiles.reader_part(camera_profiles.defaults()))
+                    self.profile = None
                 raise CameraError(camera.error)
             self.camera, self.pictures, self.error = camera, pictures, ""
             self.owner = self._owner(user, client, binding)
@@ -192,8 +212,23 @@ class CameraService:
             pictures.release()                   # so the reader isn't left waiting for a picture
         if camera is not None:
             camera.stop()
+        if pictures is not None:
+            # back to the defaults, for the server's webcam and the next camera
+            dv.apply_settings(camera_profiles.reader_part(camera_profiles.defaults()))
+            self.profile = None
         if owner and not quiet:
             events.publish(owner["user_id"], "camera", running=False)
+
+    def use_profile(self, user, camera_name):
+        """This camera's settings changed: if it's the one reading for this user, it reads with them now."""
+        with self.lock:
+            profile, owner = self.profile, self.owner
+            if profile is None or owner is None or owner["user_id"] != user["id"] \
+                    or profile.get("_camera") != camera_profiles.camera_key(camera_name):
+                return
+            values, _ = camera_profiles.effective(user["id"], camera_name)
+            dv.apply_settings(camera_profiles.reader_part(values))
+            self.profile = {**values, "_camera": profile["_camera"]}
 
     def picture(self, user, client, jpeg):
         """One picture from the page's camera. CameraError says why it isn't wanted: not reading
@@ -345,6 +380,8 @@ class CameraService:
             os.makedirs(config.DATA_DIR, exist_ok=True)
             with open(SETTINGS_FILE, "w") as f:
                 json.dump(saved, f, indent=2)
+            if self.pictures is None:
+                _set_defaults()
         return self.settings()
 
 

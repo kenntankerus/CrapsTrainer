@@ -188,6 +188,13 @@ picture, full size as JPEG, up to 10 times a second (the next once the last has 
 sends fewer). The server reads them with `dice_vision.py`, as it read its own webcam, and the status beside
 the button says what it sees and how many pictures a second get through.
 
+- **Each camera has its own settings**, kept for each account (`camera_profiles` in the database, the camera named
+  as the browser names it). A camera with none saved reads with the defaults, `data/dice_settings.json`, tuned for
+  the owner's Brio. *Settings* in the picture's panel shows them as JSON to change; saved, the reader uses them at
+  once. They hold the reader's numbers (no `rotate`: the page turns its picture), `page_camera`, `white_balance`,
+  `use_model` (false leaves the dice model out: it only knows the dice it learned from), and `felt_bgr` /
+  `felt_level` for evening out the brightness. The server runs one reader at a time, which takes the settings of
+  the camera it's reading.
 - The page sends the picture as it shows it, turned by *Turn*, and the server's `rotate` is left out. Turn
   the Brio's picture so the back wall is at the top and the shooter's end at the bottom: `roi` and `nadir`
   are measured in that picture.
@@ -339,6 +346,7 @@ lives), `CRAPS_TTS=0` (skip edge-tts and let the browser speak), `CRAPS_VOICE_PA
 | `web/voice.py` | stickman clips: recorded packs, then ElevenLabs, Kokoro or edge-tts, made once and kept |
 | `web/calls.py` | personal calls (payouts, names) and how the crowd reacts |
 | `web/get_voices.py`, `web/make_sounds.py` | fetching Kokoro's model and recording lines; recording room and crowd sounds |
+| `web/camera_profiles.py` | the dice reader's settings for each account's cameras |
 | `web/camera.py` | the dice reader: runs `dice_vision.py` on the page's pictures (or the server's webcam), rolls each throw for whoever started it, tuning |
 | `web/camera_demo.py` | the pretend camera, for trying it out and for the tests |
 | `web/events.py` | live updates to open pages (server-sent events) |

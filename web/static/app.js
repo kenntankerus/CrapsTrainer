@@ -1282,6 +1282,8 @@ function drawCamera() {
   $("camera-preview").hidden = !cam.stream || (reader.on && S.cameraMask);
   $("camera-mask").hidden = !reader.on || !S.cameraMask;
   $("camera-mask-button").hidden = !S.me?.camera?.allowed;
+  $("camera-settings-button").hidden = !S.me?.camera?.allowed;
+  $("camera-settings-button").disabled = !cam.stream;
   $("camera-mask-button").disabled = !reader.on;
   $("camera-mask-button").setAttribute("aria-pressed", String(S.cameraMask));
   $("camera-turn").disabled = !cam.stream;
@@ -1459,6 +1461,46 @@ function drawMask() {
   go();
 }
 
+// The reader's settings for this camera, as JSON: the owner's way in to every number. Saved, the server reads with
+// them at once, and the camera's controls are set again here.
+function cameraLabel() {
+  return cam.stream?.getVideoTracks()[0]?.label || "";
+}
+
+function fillCameraSettings(profile) {
+  cam.profile = profile;
+  $("camera-settings-which").textContent = `${profile.camera}: ` +
+    (profile.saved ? "its own settings, kept for this account." : "nothing saved for it yet, so the defaults.");
+  $("camera-settings-text").value = JSON.stringify(profile.settings, null, 2);
+}
+
+async function openCameraSettings() {
+  $("camera-settings-status").textContent = "";
+  try {
+    fillCameraSettings(await api(`/api/camera/profile?${new URLSearchParams({ camera: cameraLabel() })}`));
+  } catch (error) { status(error.message, true); return; }
+  $("camera-settings").showModal();
+}
+
+async function saveCameraSettings(reset = false) {
+  const say = (text, bad = false) => { $("camera-settings-status").textContent = text; $("camera-settings-status").classList.toggle("error", bad); };
+  let settings;
+  if (!reset) {
+    try { settings = JSON.parse($("camera-settings-text").value); } catch (error) { return say(`That isn't JSON: ${error.message}`, true); }
+  }
+  try {
+    const profile = reset ? await api("/api/camera/profile/reset", { camera: cameraLabel() })
+      : await api("/api/camera/profile", { camera: cameraLabel(), settings });
+    fillCameraSettings(profile);
+    const track = cam.stream?.getVideoTracks()[0];
+    if (track) cam.controls = await setCameraControls(track);
+    drawCamera();
+    say(reset ? "Back to the defaults." : "Saved.");
+  } catch (error) {
+    say(error.message, true);
+  }
+}
+
 function showMask(on) {
   S.cameraMask = on;
   drawCamera();
@@ -1508,7 +1550,10 @@ function cameraBinding() {
 async function setCameraControls(track) {
   if (!S.me?.camera?.allowed || !track.getCapabilities) return "";
   let tuned;
-  try { tuned = await api("/api/camera/settings"); } catch { return ""; }
+  try {
+    cam.profile = await api(`/api/camera/profile?${new URLSearchParams({ camera: track.label })}`);
+    tuned = cam.profile.settings;
+  } catch { return ""; }
   const want = { ...(tuned.white_balance ? { whiteBalanceMode: "manual", colorTemperature: tuned.white_balance } : {}),
     ...(tuned.page_camera || {}) };
   const can = track.getCapabilities(), set = {};
@@ -1538,7 +1583,8 @@ async function startReading() {
   if (!S.me?.camera?.allowed || !cam.stream || reader.on) return drawCamera();
   await reader.stopping;                 // switching cameras: the old reader's stop must land before this start
   try {
-    S.me.camera = await api("/api/camera/start", { ...cameraBinding(), from_page: true });
+    const label = cam.stream.getVideoTracks()[0]?.label || "";
+    S.me.camera = await api("/api/camera/start", { ...cameraBinding(), from_page: true, camera: label });
     Object.assign(reader, { on: true, status: "", fps: null, dice: [], roi: null, size: null });
     status("Camera on and reading the dice. Throw when your bets are down.");
     sendPicture();
@@ -1638,6 +1684,9 @@ function setupCamera() {
   $("camera-pop-close").addEventListener("click", () => showPicture(false));
   $("camera-turn").addEventListener("click", turnCamera);
   $("camera-mask-button").addEventListener("click", () => showMask(!S.cameraMask));
+  $("camera-settings-button").addEventListener("click", openCameraSettings);
+  $("camera-settings-save").addEventListener("click", () => saveCameraSettings());
+  $("camera-settings-reset").addEventListener("click", () => saveCameraSettings(true));
   dragPanel($("camera-pop"), $("camera-pop-head"));
   document.addEventListener("visibilitychange", () => { drawPicture(); drawMask(); });
   window.addEventListener("pagehide", () => stopCamera(false));   // let the camera's light go out with the page
