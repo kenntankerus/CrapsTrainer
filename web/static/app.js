@@ -474,7 +474,8 @@ function setTab(tab, save = true) {
   $("virtual-button").hidden = tab !== "table";        // virtual dice settle bets; the tracker is for real throws
   $("last-card").hidden = tab !== "table";             // the tracker shows its own last throw
   // Fix last, Undo and the message line sit under the last roll on the table, and under the dice on the tracker
-  (tab === "table" ? $("last-card") : $("entry")).append($("entry-tools"));
+  if (tab === "table") $("bank").before($("entry-tools"), $("status"));
+  else $("entry").append($("entry-tools"), $("status"));
   document.body.classList.toggle("fit", tab === "table");   // the table fits the window; the tracker scrolls
   if (!$("status").textContent || $("status").classList.contains("hint")) status("");
   if (save) saveSettings({ tab });
@@ -683,16 +684,17 @@ function drawTable() {
     ? "Click a spot to bet the chosen chip. Right-click to take a bet down, or drag it to another spot (or onto the chips to take it down)."
     : "Tap a spot to bet the chosen chip. Press and hold a bet to take it down or move it.";
 
+  // the dice, with the total and the state ("point is 6") stacked beside them, to keep the card short
   const last = clear($("last-roll"));
   const r = t.last_roll;
+  last.insertAdjacentHTML("beforeend", r ? dieSvg(r.dice[0], 44) + dieSvg(r.dice[1], 44) : dieSvg(0, 44) + dieSvg(0, 44));
+  const words = item(last, "div", "", "words");
   if (r) {
-    last.insertAdjacentHTML("beforeend", dieSvg(r.dice[0]) + dieSvg(r.dice[1]));
-    item(last, "span", r.no_roll ? `${r.dice[0]}-${r.dice[1]}  ·  NO ROLL` : `${r.dice[0]}-${r.dice[1]} = ${r.total}`, "total");
+    item(words, "span", r.no_roll ? `${r.dice[0]}-${r.dice[1]}  ·  NO ROLL` : `${r.dice[0]}-${r.dice[1]} = ${r.total}`, "total");
+    if (r.state) item(words, "span", r.state, "state muted");
   } else {
-    last.insertAdjacentHTML("beforeend", dieSvg(0) + dieSvg(0));
-    item(last, "span", "No rolls yet", "muted");
+    item(words, "span", "No rolls yet", "muted");
   }
-  $("last-state").textContent = r?.state || "";
   const payouts = clear($("payouts"));
   if (r && r.events?.length) {
     for (const e of r.events) {
@@ -1120,9 +1122,13 @@ function saveMix() {
   try { localStorage.setItem("craps.mix", JSON.stringify(S.mix)); } catch { /* not kept */ }
 }
 
+// The room noise is switched off for now, whatever the Sound settings say; true brings it (and its switch) back
+const ROOM_NOISE = false;
+const roomWanted = () => ROOM_NOISE && S.mix.roomOn && !document.hidden;
+
 function applyMix() {
   for (const part of ["voice", "room", "crowd", "sfx"]) sound.setVolume(part, S.mix[part]);
-  sound.room(S.mix.roomOn && !document.hidden);
+  sound.room(roomWanted());
 }
 
 async function prefetchVoice() {
@@ -1149,7 +1155,8 @@ const ENGINE_NAMES = { elevenlabs: "ElevenLabs", kokoro: "Kokoro (on the server)
 
 function openMix() {
   const box = clear($("mix-sliders"));
-  for (const [part, label] of [["voice", "Stickman"], ["room", "Room"], ["crowd", "Crowd"], ["sfx", "Dice and chips"]]) {
+  const parts = [["voice", "Stickman"], ["room", "Room"], ["crowd", "Crowd"], ["sfx", "Dice and chips"]];
+  for (const [part, label] of parts.filter(([part]) => ROOM_NOISE || part !== "room")) {
     item(box, "label", label).htmlFor = `volume-${part}`;
     const range = item(box, "input");
     Object.assign(range, { type: "range", id: `volume-${part}`, min: 0, max: 1, step: 0.05, value: S.mix[part] });
@@ -1162,6 +1169,7 @@ function openMix() {
     });
   }
   $("mix-room").checked = S.mix.roomOn;
+  $("mix-room").closest("label").hidden = !ROOM_NOISE;
   $("mix-crowd").checked = S.mix.crowdOn;
   $("mix-personal").checked = S.settings.personal !== false;
   const engines = S.voiceEngines || [];
@@ -1179,7 +1187,7 @@ function setupMix() {
   $("mix-crowd").addEventListener("change", () => { S.mix.crowdOn = $("mix-crowd").checked; saveMix(); });
   $("mix-personal").addEventListener("change", () => saveSettings({ personal: $("mix-personal").checked }));
   $("mix-test").addEventListener("click", () => { sound.diceRoll(); setTimeout(() => sound.react("cheer"), 900); });
-  document.addEventListener("visibilitychange", () => { if (soundStarted) sound.room(S.mix.roomOn && !document.hidden); });
+  document.addEventListener("visibilitychange", () => { if (soundStarted) sound.room(roomWanted()); });
 }
 
 // ---------------------------------------------------------------- live updates from the server
