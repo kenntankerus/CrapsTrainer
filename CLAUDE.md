@@ -78,6 +78,15 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   (`MOTION_SPAN`): at 14 a second a slow slide looked still and a moving die got read. Runs before turning it:
   10 of 15 read right, then 29 of 35 (the misses were dice out of the picture, or cut off at a wall).
 - The camera keeps running on the server after the page is closed: stop it first, or restart the app.
+- **Table tab layout** (on a computer screen it fits the window, no scrolling): settings bar with the camera buttons;
+  a row of dice card (46px dice), Last roll (Fix last / Undo / Virtual roll and the message line on its heading's
+  line, what got paid under them) and the bankroll tile; then the layout, which stretches to fill its tile (boxes
+  grow, writing keeps its size; chips are placed by each box's own shape), with Rolls (270px) beside it; then a
+  one-row chip tray across the full width. The camera picture floats in a panel dragged by its title.
+- **Room noise is off for now** (`ROOM_NOISE = false` in `app.js`, which also hides its switch and slider). The
+  owner asked for it; crowd reactions still play.
+- Testing changes: `python -m web` from the server's checkout listens on `127.0.0.1:8001` and serves `web/static`
+  straight from the files; reach it from the dev laptop with `ssh -N -L 8001:127.0.0.1:8001 kenn@192.168.1.185`.
 - Never tried for real yet: edge-tts, ElevenLabs and Kokoro.
 
 ## Next up

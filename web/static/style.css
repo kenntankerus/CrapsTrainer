@@ -66,6 +66,7 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .card.narrow input { width: 100%; margin-top: 4px; }
 .status { min-height: 1.3em; margin: 8px 0 0; color: var(--muted); }
 .status.error { color: #f0a0a0; }
+.status.hint { font-size: .85rem; }
 .code { font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; color: var(--gold); margin: 12px 0 4px; }
 .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
 .row.wrap { flex-wrap: wrap; }
@@ -76,8 +77,12 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
 .field-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
-/* the dice pad */
-.entry .slots { display: flex; align-items: center; gap: 10px; }
+/* the dice pad, and the last roll beside it */
+.entry-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; margin-bottom: 12px; }
+.entry-row > .card { margin-bottom: 0; }
+/* as wide as the six dice: the buttons and messages wrap under them rather than widening the card */
+.entry { width: min-content; }
+.entry .slots { display: flex; align-items: center; gap: 10px; width: calc(6 * 64px + 5 * 8px); max-width: 100%; }
 .slot { width: 64px; height: 64px; padding: 0; background: var(--inset); border: 2px dashed var(--edge); }
 .slot.filled { border-style: solid; border-color: var(--gold); }
 .slot.next { border-color: var(--gold); }
@@ -87,16 +92,42 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .pad button { padding: 4px; background: var(--inset); aspect-ratio: 1; min-height: 0; }
 .pad button svg { width: 100%; height: 100%; }
 .entry-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
-.hint { font-size: .85rem; }
+/* The last roll, kept no taller than the dice card:
+     LAST ROLL        message (or how to enter the dice)     Fix last  Undo  Virtual roll
+     dice  1-4 = 5    what got paid (scrolls) ...........................................
+           point is 5
+   The payouts never make the card taller (contain: size): they scroll instead */
+.last-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto 1fr;
+  gap: 6px 18px; align-items: center; }
+.last-card > h2 { grid-column: 1; grid-row: 1; margin: 0; }
+.last-card > .status { grid-column: 2; grid-row: 1; margin: 0; }
+.last-card > .entry-actions { grid-column: 3; grid-row: 1; margin: 0; flex-wrap: nowrap; }
+.last-card > .last { grid-column: 1; grid-row: 2; min-height: 0; align-self: start; }
+.last-card > .lines { grid-column: 2 / 4; grid-row: 2; align-self: stretch; contain: size; max-height: none; }
+.last .words { display: flex; flex-direction: column; margin-left: 4px; }
+.last .words .total { margin-left: 0; font-size: 1.4rem; line-height: 1.2; }
+.last .words .state { font-size: .85rem; max-width: 200px; }
+/* the bankroll tile: two by two, the buttons the same width */
+.bank { display: grid; grid-template-columns: auto auto; gap: 8px; align-content: center; }
+.bank select { flex: 1; }
 
 /* the table */
-.table-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
+.table-grid { display: grid; grid-template-columns: minmax(0, 1fr) 270px; grid-template-areas: "layout rolls" "under under";
+  gap: 0 12px; align-items: start; }
+.table-main { grid-area: layout; }
+.table-side { grid-area: rolls; }
+.table-grid > .under { grid-area: under; }
 .layout-wrap { padding: 8px; }
+/* the chip tray: one row, kept low (smaller chips, little padding) so the layout gets the height */
+.under { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding: 6px 14px; }
+.under .rack { flex: none; }
+#take-all { margin-left: auto; }
+.rolls-card #layout-help { margin: 8px 0 0; }
 #layout { width: 100%; height: auto; display: block; touch-action: manipulation; user-select: none;
   -webkit-user-select: none; -webkit-touch-callout: none; }
 #layout .zone { cursor: pointer; }
 #layout text { font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; pointer-events: none; white-space: pre; }
-.under .money { font-size: 1.1rem; font-weight: 700; color: var(--gold); margin: 10px 0 0; }
+.under .money { font-size: 1.05rem; font-weight: 700; color: var(--gold); margin: 0; white-space: nowrap; }
 .rack { display: flex; gap: 10px; flex-wrap: wrap; padding: 6px; border-radius: 10px; border: 2px solid transparent; }
 .rack.drop { border-color: var(--gold); }
 .chip {
@@ -119,6 +150,8 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .lines li { display: flex; gap: 8px; padding: 4px 6px; border-radius: 6px; }
 .lines li:nth-child(odd) { background: var(--inset); }
 .lines .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the rolls column is narrow: a long note ("point 10 (virtual)") wraps onto a second line instead of being cut */
+#rolls .grow { white-space: normal; overflow: visible; }
 .win { color: var(--gold); }
 .loss { color: #f08a8a; }
 
@@ -149,13 +182,24 @@ table.stats tr:nth-child(even) td { background: var(--inset); }
 table.stats td:first-child, table.stats th:first-child { text-align: left; }
 #chart { width: 100%; max-width: 640px; height: auto; display: block; }
 
-/* the camera */
-.camera { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; }
-.camera-side { flex: 1; min-width: 240px; }
-.camera-row { margin-top: 0; }
-#camera-status { margin: 10px 0 0; }
+/* the camera: its buttons at the right of the settings, its picture in a panel that floats over the page */
+/* the bar takes the rest of the line and the status shrinks (cut short, in full in the panel), so the
+   buttons never drop to a second line */
+.camera-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; flex: 1 1 0; min-width: 0; }
+.camera-bar > button { flex: none; }
+#camera-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#camera-show[aria-pressed="true"] { background: var(--button-hover); box-shadow: inset 0 0 0 2px var(--gold); }
+.camera-pop {
+  position: fixed; top: 140px; right: 16px; z-index: 10; width: min(420px, calc(100vw - 24px));
+  max-height: calc(100vh - 160px); overflow-y: auto; background: var(--card); border: 1px solid var(--edge);
+  border-radius: 12px; padding: 4px 12px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+}
+.camera-pop-head { display: flex; align-items: center; justify-content: space-between; cursor: move; touch-action: none; user-select: none; }
+.camera-pop-head h2 { margin: 0; }
+.camera-pop-head button { font-size: 1.5rem; line-height: 1; }
+.camera-pop p { margin: 8px 0 0; }
 /* the camera's own shape once a picture is in (a camera turned on its side sends a tall one), 16:9 until then */
-#camera-preview { display: block; width: min(400px, 100%); max-height: 50vh; object-fit: contain; border-radius: 8px; background: var(--inset); aspect-ratio: auto 16 / 9; }
+#camera-preview { display: block; width: 100%; max-height: calc(100vh - 200px); object-fit: contain; border-radius: 8px; background: var(--inset); aspect-ratio: auto 16 / 9; }
 #tune-preview { display: block; width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; background: var(--inset); aspect-ratio: auto 16 / 9; margin: 10px 0; }
 .sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) 4.5em; gap: 6px 10px; align-items: center; }
 .sliders input[type="range"] { width: 100%; min-height: 32px; padding: 0; accent-color: var(--gold); border: 0; background: transparent; }
@@ -179,9 +223,54 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .summary dt { color: var(--muted); }
 .summary dd { margin: 0; }
 
+/* On a computer screen the table tab fits the window with no scrolling: the layout gets whatever height
+   is left once everything else is in, and the rolls list scrolls in the height of the layout and chips */
+@media (min-width: 1101px) and (min-height: 600px) {
+  body.fit { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  body.fit .top { flex: none; }
+  body.fit main { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; padding-bottom: 12px; width: 100%; }
+  body.fit main > * { flex: none; }
+  body.fit #tab-table { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  body.fit .table-grid { flex: 1 1 0; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; }
+  body.fit .table-main { display: flex; flex-direction: column; min-height: 0; }
+  body.fit .layout-wrap { flex: 1 1 0; min-height: 220px; position: relative; margin-bottom: 12px; }
+  body.fit #layout { position: absolute; inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px); }
+  body.fit .under { margin-bottom: 0; }
+  body.fit .rolls-card { height: calc(100% - 12px); margin-bottom: 0; display: flex; flex-direction: column; }
+  body.fit #rolls { flex: 1 1 0; min-height: 0; max-height: none; }
+}
+
+/* On a computer screen the dice card is a quarter shorter (46px dice instead of 64) and the chips smaller */
+@media (min-width: 1101px) {
+  .entry { padding-top: 10px; padding-bottom: 10px; }
+  .entry .slots { width: calc(6 * 46px + 5 * 8px); }
+  .slot { width: 46px; height: 46px; }
+  .slot svg { width: 38px; height: 38px; }
+  .roll { min-height: 46px; }
+  .pad { grid-template-columns: repeat(6, 46px); margin-top: 8px; }
+  .pad button { padding: 3px; }
+  .last-card, .bank { padding-top: 10px; padding-bottom: 10px; }
+  .rack { padding: 2px; gap: 8px; }
+  .chip { width: 42px; height: 42px; font-size: .8rem; }
+  .chip[aria-pressed="true"] { transform: translateY(-3px); }
+}
 @media (max-width: 1100px) {
   .table-grid { grid-template-columns: minmax(0, 1fr); }
   .tracker-grid { grid-template-columns: minmax(0, 1fr); }
+  .table-grid { grid-template-areas: "layout" "under" "rolls"; }
+  .last-card { display: block; }
+  .last-card > h2 { margin-bottom: .6rem; }
+  .last-card > .lines { contain: none; max-height: 320px; margin-top: 8px; }
+  .last-card > .entry-actions { margin-top: 10px; }
+  .entry-row { grid-template-columns: auto minmax(0, 1fr); }
+  .bank { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; }
+  .under .money { white-space: normal; }
+}
+@media (max-width: 760px) {
+  .entry-row { grid-template-columns: minmax(0, 1fr); }
+  .entry { width: auto; }
+  .camera-bar { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; }
+  .camera-pop { top: 70px; }
 }
 @media (max-width: 640px) {
   main, .gate { padding: 10px 10px 24px; }
@@ -196,6 +285,5 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
   .slot svg { width: 46px; height: 46px; }
   .pad { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
   .roll { min-width: 0; flex: 1; }
-  .hint { display: none; }
   .chip { width: 50px; height: 50px; }
 }

@@ -51,10 +51,13 @@ function saveSettings(values) {
   }, 400);
 }
 
+// With nothing to say, the line under the dice says how to enter them (it used to be a line of its own)
 function status(text, error = false) {
   const node = $("status");
-  node.textContent = text || "";
+  node.textContent = text || `Tap the two dice (left first), or type them, then ${$("roll-button").textContent}.`;
   node.classList.toggle("error", !!error);
+  node.classList.toggle("hint", !text);
+  node.classList.toggle("muted", !text);
 }
 
 function localTime() {
@@ -469,6 +472,12 @@ function setTab(tab, save = true) {
   $("tab-tracker").hidden = tab !== "tracker";
   $("roll-button").textContent = tab === "table" ? "Roll" : "Log throw";
   $("virtual-button").hidden = tab !== "table";        // virtual dice settle bets; the tracker is for real throws
+  $("last-card").hidden = tab !== "table";             // the tracker shows its own last throw
+  $("bank").hidden = tab !== "table";                  // and has no bankroll
+  // Fix last, Undo and the message line sit in the last roll on the table, and under the dice on the tracker
+  (tab === "table" ? $("last-card") : $("entry")).append($("entry-tools"), $("status"));
+  document.body.classList.toggle("fit", tab === "table");   // the table fits the window; the tracker scrolls
+  if (!$("status").textContent || $("status").classList.contains("hint")) status("");
   if (save) saveSettings({ tab });
 }
 
@@ -667,7 +676,8 @@ function drawRack() {
 function drawTable() {
   const t = S.table;
   if (!t) return;
-  drawLayout($("layout"), S.layout, t, { flash: S.flash, hover: S.hover, moving: S.moving, hop: $("hop").value });
+  drawLayout($("layout"), S.layout, t, { flash: S.flash, hover: S.hover, moving: S.moving, hop: $("hop").value,
+    aspect: S.layoutAspect });
   $("money").textContent = `Rack ${money(t.bankroll)}   ·   On the table ${money(t.on_table)}   ·   ` +
     `${t.up >= 0 ? "Up" : "Down"} ${money(Math.abs(t.up))}`;
   $("comeout").checked = t.work_on_comeout;
@@ -675,16 +685,17 @@ function drawTable() {
     ? "Click a spot to bet the chosen chip. Right-click to take a bet down, or drag it to another spot (or onto the chips to take it down)."
     : "Tap a spot to bet the chosen chip. Press and hold a bet to take it down or move it.";
 
+  // the dice, with the total and the state ("point is 6") stacked beside them, to keep the card short
   const last = clear($("last-roll"));
   const r = t.last_roll;
+  last.insertAdjacentHTML("beforeend", r ? dieSvg(r.dice[0], 44) + dieSvg(r.dice[1], 44) : dieSvg(0, 44) + dieSvg(0, 44));
+  const words = item(last, "div", "", "words");
   if (r) {
-    last.insertAdjacentHTML("beforeend", dieSvg(r.dice[0]) + dieSvg(r.dice[1]));
-    item(last, "span", r.no_roll ? `${r.dice[0]}-${r.dice[1]}  ·  NO ROLL` : `${r.dice[0]}-${r.dice[1]} = ${r.total}`, "total");
+    item(words, "span", r.no_roll ? `${r.dice[0]}-${r.dice[1]}  ·  NO ROLL` : `${r.dice[0]}-${r.dice[1]} = ${r.total}`, "total");
+    if (r.state) item(words, "span", r.state, "state muted");
   } else {
-    last.insertAdjacentHTML("beforeend", dieSvg(0) + dieSvg(0));
-    item(last, "span", "No rolls yet", "muted");
+    item(words, "span", "No rolls yet", "muted");
   }
-  $("last-state").textContent = r?.state || "";
   const payouts = clear($("payouts"));
   if (r && r.events?.length) {
     for (const e of r.events) {
@@ -885,9 +896,13 @@ function setupLayout() {
   svg.addEventListener("pointerup", finish);
   svg.addEventListener("pointercancel", finish);
 
+  // Fitted to the window (style.css), the box can be wide but short: the tall layout would come out tiny
   const pick = () => {
-    const name = $("layout-wrap").clientWidth >= 720 ? "wide" : "tall";
-    if (name !== S.layout) { S.layout = name; drawTable(); }
+    const wrap = $("layout-wrap"), fitted = getComputedStyle($("layout")).position === "absolute";
+    const name = wrap.clientWidth >= 720 || (fitted && wrap.clientWidth > wrap.clientHeight) ? "wide" : "tall";
+    // fitted, the drawing takes the box's shape (the svg sits 8px inside it); rounded so a resize redraws now and then
+    const aspect = fitted ? Math.round(((wrap.clientWidth - 16) / Math.max(1, wrap.clientHeight - 16)) * 50) / 50 : null;
+    if (name !== S.layout || aspect !== S.layoutAspect) { S.layout = name; S.layoutAspect = aspect; drawTable(); }
   };
   new ResizeObserver(pick).observe($("layout-wrap"));
   pick();
@@ -1110,9 +1125,13 @@ function saveMix() {
   try { localStorage.setItem("craps.mix", JSON.stringify(S.mix)); } catch { /* not kept */ }
 }
 
+// The room noise is switched off for now, whatever the Sound settings say; true brings it (and its switch) back
+const ROOM_NOISE = false;
+const roomWanted = () => ROOM_NOISE && S.mix.roomOn && !document.hidden;
+
 function applyMix() {
   for (const part of ["voice", "room", "crowd", "sfx"]) sound.setVolume(part, S.mix[part]);
-  sound.room(S.mix.roomOn && !document.hidden);
+  sound.room(roomWanted());
 }
 
 async function prefetchVoice() {
@@ -1139,7 +1158,8 @@ const ENGINE_NAMES = { elevenlabs: "ElevenLabs", kokoro: "Kokoro (on the server)
 
 function openMix() {
   const box = clear($("mix-sliders"));
-  for (const [part, label] of [["voice", "Stickman"], ["room", "Room"], ["crowd", "Crowd"], ["sfx", "Dice and chips"]]) {
+  const parts = [["voice", "Stickman"], ["room", "Room"], ["crowd", "Crowd"], ["sfx", "Dice and chips"]];
+  for (const [part, label] of parts.filter(([part]) => ROOM_NOISE || part !== "room")) {
     item(box, "label", label).htmlFor = `volume-${part}`;
     const range = item(box, "input");
     Object.assign(range, { type: "range", id: `volume-${part}`, min: 0, max: 1, step: 0.05, value: S.mix[part] });
@@ -1152,6 +1172,7 @@ function openMix() {
     });
   }
   $("mix-room").checked = S.mix.roomOn;
+  $("mix-room").closest("label").hidden = !ROOM_NOISE;
   $("mix-crowd").checked = S.mix.crowdOn;
   $("mix-personal").checked = S.settings.personal !== false;
   const engines = S.voiceEngines || [];
@@ -1169,7 +1190,7 @@ function setupMix() {
   $("mix-crowd").addEventListener("change", () => { S.mix.crowdOn = $("mix-crowd").checked; saveMix(); });
   $("mix-personal").addEventListener("change", () => saveSettings({ personal: $("mix-personal").checked }));
   $("mix-test").addEventListener("click", () => { sound.diceRoll(); setTimeout(() => sound.react("cheer"), 900); });
-  document.addEventListener("visibilitychange", () => { if (soundStarted) sound.room(S.mix.roomOn && !document.hidden); });
+  document.addEventListener("visibilitychange", () => { if (soundStarted) sound.room(roomWanted()); });
 }
 
 // ---------------------------------------------------------------- live updates from the server
@@ -1229,8 +1250,8 @@ async function loadCamera() {
 
 function drawCamera() {
   const c = S.camera;
-  $("camera-card").hidden = !c?.allowed;
-  if (!c?.allowed) return;
+  $("camera-bar").hidden = !c?.allowed;
+  if (!c?.allowed) { $("camera-pop").hidden = true; return; }
   const button = $("camera-button");
   const elsewhere = c.running && !cameraMine();
   button.textContent = !c.running ? "Start camera" : elsewhere ? (c.mine ? "Use the camera here" : "Camera busy") : "Stop camera";
@@ -1243,12 +1264,16 @@ function drawCamera() {
     text = c.error;
   }
   $("camera-status").textContent = text;
+  $("camera-status").title = text;
+  $("camera-full-status").textContent = text;
   $("camera-hint").textContent = cameraMine()
     ? `Throws go to ${$("player").selectedOptions[0]?.textContent || "this player"} on the ${S.tab === "tracker" ? "tracker (no bets)" : "table"}. ` +
       "Wrong read? Tap the right dice (left die first), then Fix last." + (c.model ? `  (${c.model})` : "")
     : "";
   $("camera-tune").disabled = !c.running;
-  $("camera-preview").hidden = !c.running || !$("camera-show").checked;
+  $("camera-show").setAttribute("aria-pressed", String(S.cameraPicture));
+  $("camera-pop").hidden = !S.cameraPicture;
+  $("camera-preview").hidden = !c.running || !S.cameraPicture;
   previewLoop();
 }
 
@@ -1351,9 +1376,39 @@ function sendTuning(save = false) {
   tuneTimer = setTimeout(go, 150);
 }
 
+// The picture's panel: hidden until asked for, and kept open or shut on this device
+function showPicture(on) {
+  S.cameraPicture = on;
+  try { localStorage.setItem("craps.cameraPicture", on ? "1" : "0"); } catch { /* not kept */ }
+  drawCamera();
+}
+
+// Dragged by its title, so it can sit over whatever isn't needed just then
+function dragPanel(panel, handle) {
+  let grab = null;
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) return;
+    const box = panel.getBoundingClientRect();
+    grab = { dx: event.clientX - box.left, dy: event.clientY - box.top };
+    handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!grab) return;
+    const x = Math.min(Math.max(0, event.clientX - grab.dx), window.innerWidth - panel.offsetWidth);
+    const y = Math.min(Math.max(0, event.clientY - grab.dy), window.innerHeight - 40);
+    Object.assign(panel.style, { left: `${x}px`, top: `${y}px`, right: "auto" });
+  });
+  const drop = () => { grab = null; };
+  handle.addEventListener("pointerup", drop);
+  handle.addEventListener("pointercancel", drop);
+}
+
 function setupCamera() {
+  try { S.cameraPicture = localStorage.getItem("craps.cameraPicture") === "1"; } catch { S.cameraPicture = false; }
   $("camera-button").addEventListener("click", toggleCamera);
-  $("camera-show").addEventListener("change", drawCamera);
+  $("camera-show").addEventListener("click", () => showPicture(!S.cameraPicture));
+  $("camera-pop-close").addEventListener("click", () => showPicture(false));
+  dragPanel($("camera-pop"), $("camera-pop-head"));
   $("camera-tune").addEventListener("click", openTuning);
   $("tune-train").addEventListener("click", async () => {
     const button = $("tune-train"), report = $("train-report");

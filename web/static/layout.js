@@ -90,6 +90,19 @@ export const LAYOUTS = {
   tall: { zones: tallZones(), labels: TALL_LABELS, width: 400, height: 930, markerStart: 130, numberText: { lay: "LAY", buy: "BUY", dc: "DC", come: "COME" } },
 };
 
+// Fitted into a box of another shape, the layout stretches to fill it: the boxes grow, the writing keeps its size.
+// Past twice its own width (or height) it stops stretching and sits in the middle instead.
+const MAX_STRETCH = 2;
+function stretched(L, aspect) {
+  if (!aspect) return L;
+  const own = L.width / L.height;
+  const sx = aspect > own ? Math.min(MAX_STRETCH, aspect / own) : 1;
+  const sy = aspect < own ? Math.min(MAX_STRETCH, own / aspect) : 1;
+  const zones = {};
+  for (const [key, [x0, y0, x1, y1]] of Object.entries(L.zones)) zones[key] = [x0 * sx, y0 * sy, x1 * sx, y1 * sy];
+  return { ...L, zones, width: L.width * sx, height: L.height * sy };
+}
+
 function el(name, attrs = {}, text) {
   const node = document.createElementNS(SVG, name);
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
@@ -108,9 +121,12 @@ function textLines(parent, x, y, label, attrs, lineHeight) {
   return t;
 }
 
-// Where a bet's chip sits in its box, clear of the printed label (and of the puck in the number boxes)
+// Where a bet's chip sits in its box, clear of the printed label (and of the puck in the number boxes).
+// The size and the corner come from the box's own shape (w, h), not the stretched one: a stretched hardway box
+// otherwise got a big chip in the middle of its label
 function chipSpot(name, key, [x0, y0, x1, y1]) {
-  const w = x1 - x0, h = y1 - y0;
+  const [b0, c0, b1, c1] = LAYOUTS[name].zones[key];
+  const w = b1 - b0, h = c1 - c0;
   let r = Math.min(15, h / 2 - 2), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, oddsDir = 1;
   if (key.startsWith("place_")) {
     if (name === "tall") r = 10;
@@ -144,9 +160,10 @@ function drawChip(g, x, y, radius, cents, off = false, offLeft = false) {
   }
 }
 
-// Draw the whole layout into the svg. view is the server's table view; ui holds hover, flash, hop and moving.
+// Draw the whole layout into the svg. view is the server's table view; ui holds hover, flash, hop and moving,
+// and aspect: the width / height of the box it's fitted into (none: its own shape).
 export function drawLayout(svg, name, view, ui) {
-  const L = LAYOUTS[name];
+  const L = stretched(LAYOUTS[name], ui.aspect);
   svg.setAttribute("viewBox", `0 0 ${L.width} ${L.height}`);
   svg.replaceChildren();
   svg.appendChild(el("rect", { x: 0, y: 0, width: L.width, height: L.height, rx: 14, fill: COLORS.felt }));
