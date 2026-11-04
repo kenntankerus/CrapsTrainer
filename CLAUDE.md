@@ -61,7 +61,7 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
     `Custom L5-1 R5-1`, "Parallel" is Parallel Sixes. Older 3-V, All Sevens, Cross-Sixes and Parallel Sixes throws
     have no hold recorded.
   - The desktop apps get the set names and the 8 Hardway holds, but no hold picker for the other sets.
-- **The camera is the device's** (branch `device-camera`): *Start camera* opens the camera of whatever the page is
+- **The camera is the device's** (PR #10, live; confirmed opening the table laptop's webcam): *Start camera* opens the camera of whatever the page is
   on with the browser's `getUserMedia` (needs https or localhost) and draws it, turned by *Turn* (kept per camera on
   that device), in the floating Camera panel. It doesn't read the dice yet: the owner wants camera access first and
   reading later. The page no longer starts the server's webcam or has its Tune window; the server's camera code,
