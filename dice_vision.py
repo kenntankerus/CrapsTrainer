@@ -574,12 +574,15 @@ class DiceCamera:
       camera.view     "normal", or "mask" to show the green the dice are found by (for tuning)
       camera.reapply()  send changed FOCUS / EXPOSURE / GAIN to the camera
     "crops" are the straightened top faces, left die first, as PNG bytes.
-    capture can be anything with read() and release() in place of a real camera (for tests).
+    capture can be anything with read() and release() in place of a real camera (for tests, or the pictures
+    a web page sends). turn_pictures=False reads them as they come, for pictures already turned by whoever
+    sent them (the web page turns its picture by its own Turn button, so what you see is what's read).
     """
 
-    def __init__(self, camera_index=0, capture=None):
+    def __init__(self, camera_index=0, capture=None, turn_pictures=True):
         self.camera_index = camera_index
         self.capture = capture
+        self.turn_pictures = turn_pictures
         self.view = "normal"
         self._reapply = False
         self._preview_small = None
@@ -657,7 +660,8 @@ class DiceCamera:
                 self.error = "Lost the camera feed."
                 self.events.put(("error", self.error))
                 break
-            frame = turn(frame)
+            if self.turn_pictures:
+                frame = turn(frame)
             frame_number += 1
             now = time.perf_counter()
             if self.resolution is None:

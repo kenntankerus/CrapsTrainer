@@ -63,10 +63,18 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   - The desktop apps get the set names and the 8 Hardway holds, but no hold picker for the other sets.
 - **The camera is the device's** (PR #10, live; confirmed opening the table laptop's webcam): *Start camera* opens the camera of whatever the page is
   on with the browser's `getUserMedia` (needs https or localhost) and draws it, turned by *Turn* (kept per camera on
-  that device), in the floating Camera panel. It doesn't read the dice yet: the owner wants camera access first and
-  reading later. The page no longer starts the server's webcam or has its Tune window; the server's camera code,
-  API and tests are untouched, for when reading comes back.
-- **The server's camera reader**, as tuned, for when reading comes back: the Brio (by its `/dev/v4l/by-id` name in
+  that device), in the floating Camera panel. The page no longer starts the server's webcam or has its Tune window.
+- **The page's camera reads the dice** (for `CRAPS_CAMERA_USERS`): *Start camera* also starts the server's reader
+  (`/api/camera/start` with `from_page`), and the page POSTs its picture, turned by *Turn*, full size JPEG, to
+  `/api/camera/picture` up to 10 a second, one at a time. `PagePictures` in `web/camera.py` stands in for the webcam;
+  the server's `rotate` is skipped (`turn_pictures=False`), so the Brio's picture must be turned on the page (back
+  wall at the top). White balance is set from `white_balance` where the browser can. 10 s with no picture stops the
+  reader; the page restarts it on a 410. Tested with headless Windows Chrome fed a video of drawn dice
+  (`--use-file-for-fake-video-capture`, driven over its debugging port from Windows Python); not yet on the Brio.
+  The Brio now hangs off the owner's Windows laptop, not the server, so the server's `.env` must not hand the
+  container a camera device (`COMPOSE_FILE` with `docker-compose.camera.yml`) or the container won't start.
+- `tests/test_camera.py::test_unclear_read_goes_with_typed_dice` fails outside UTC (the dev laptop); CI runs in UTC.
+- **The server's camera reader**, as tuned (the page's pictures use the same settings, but `rotate`): the Brio (by its `/dev/v4l/by-id` name in
   `CRAPS_CAMERA_DEVICE`), turned a quarter turn on its
   mount so the picture's long side runs along the table. Tuned in the server's `data/dice_settings.json`: `rotate` 270
   (turns the picture back: back wall at the top, the shooter's end at the bottom), `white_balance` 4000 (automatic

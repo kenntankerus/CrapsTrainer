@@ -413,6 +413,7 @@ function setupControls() {
     S.player = Number($("player").value);
     S.flash = {};
     saveSettings({ player_id: S.player });
+    syncCamera();
     const name = $("player").selectedOptions[0].textContent;
     status(`${name} is throwing.`);
     await refresh();
@@ -420,21 +421,24 @@ function setupControls() {
   $("dice-set").addEventListener("change", async () => {
     await pickOther($("dice-set"), "New dice set", "dice_set");
     showSetup();
+    syncCamera();
     if (S.tab === "tracker") refresh();
   });
   $("hold").addEventListener("change", () => {
     saveSettings({ holds: { ...(S.settings.holds || {}), [$("dice-set").value]: $("hold").value } });
+    syncCamera();
     if (S.tab === "tracker") refresh();
   });
   for (const [id, key] of [["custom-left", "custom_left"], ["custom-right", "custom_right"]]) {
-    $(id).addEventListener("change", () => { saveSettings({ [key]: $(id).value }); if (S.tab === "tracker") refresh(); });
+    $(id).addEventListener("change", () => { saveSettings({ [key]: $(id).value }); syncCamera(); if (S.tab === "tracker") refresh(); });
   }
   $("position").addEventListener("change", async () => {
     await pickOther($("position"), "New position", "position");
+    syncCamera();
     if (S.tab === "tracker") refresh();
   });
-  $("voice").addEventListener("change", () => { saveSettings({ voice: $("voice").value }); prefetchVoice(); });
-  $("back-wall").addEventListener("change", () => { saveSettings({ back_wall: $("back-wall").checked }); });
+  $("voice").addEventListener("change", () => { saveSettings({ voice: $("voice").value }); prefetchVoice(); setTimeout(syncCamera, 500); });
+  $("back-wall").addEventListener("change", () => { saveSettings({ back_wall: $("back-wall").checked }); syncCamera(); });
   $("sounds").addEventListener("change", () => saveSettings({ sounds: $("sounds").checked }));
   $("compare").addEventListener("change", () => { saveSettings({ compare: $("compare").value }); refresh(); });
   $("hop").addEventListener("change", () => { saveSettings({ hop: $("hop").value }); drawTable(); });
@@ -455,7 +459,7 @@ function setupControls() {
     saveSettings({ buy_in: cents });
   });
   for (const button of $("tabs").querySelectorAll("button")) {
-    button.addEventListener("click", () => { setTab(button.dataset.tab); refresh(); });
+    button.addEventListener("click", () => { setTab(button.dataset.tab); syncCamera(); refresh(); });
   }
 }
 
@@ -1210,14 +1214,29 @@ function connectLive() {
       if (!mine && (m.player_id == null || m.player_id === S.player)) refresh();
     } else if (m.type === "players") {
       if (!mine) reloadPlayers().then(refresh).catch(() => {});
+    } else if (m.type === "camera_throw") {
+      if (m.player_id === S.player) refresh(true);
+      if (mine) {
+        if ($("sounds").checked) sound.beep(true);
+        speak(m);
+        status(m.message);
+      }
+    } else if (m.type === "camera_unclear") {
+      if (mine) {
+        if ($("sounds").checked) sound.beep(false);
+        status(m.message, true);
+      }
+    } else if (m.type === "camera_error") {
+      if (reader.on) status(m.message, true);
     }
   };
 }
 
 // ---------------------------------------------------------------- the camera on this device
 // The browser opens the camera of whatever the page is on (a phone, a tablet, the table's laptop), so the server's
-// own webcam isn't needed. It only shows the table for now: the dice are still tapped in.
-const cam = { stream: null, error: "", starting: false, turn: 0 };
+// own webcam isn't needed. For the accounts that may use the dice reader the page also sends the picture to the
+// server, which reads the dice from it (see "reading the dice" below); for everyone else it only shows the table.
+const cam = { stream: null, error: "", starting: false, turn: 0, balance: "" };
 
 function cameraSaved(key, fallback) {
   try { return JSON.parse(localStorage.getItem(`craps.${key}`)) ?? fallback; } catch { return fallback; }
@@ -1237,16 +1256,26 @@ function drawCamera() {
   const button = $("camera-button");
   button.textContent = cam.stream ? "Stop camera" : cam.starting ? "Starting…" : "Start camera";
   button.disabled = cam.starting;
-  let text = cam.error || "Camera off";
+  let text = cam.error || "Camera off", full = text;
   if (track) {
     const { width, height, frameRate } = track.getSettings();
     text = `${track.label || "Camera"}${width ? `: ${width}x${height}` : ""}${frameRate ? ` @ ${Math.round(frameRate)} fps` : ""}`;
+    full = text + (cam.balance ? `, ${cam.balance}` : "");
+    if (reader.on) {
+      const reading = `Reading: ${reader.status || "starting"}${reader.fps ? ` (${reader.fps} pictures a second)` : ""}`;
+      text = reading;
+      full = `${full}. ${reading}`;
+    }
   }
   $("camera-status").textContent = text;
-  $("camera-status").title = text;
-  $("camera-full-status").textContent = text;
-  $("camera-hint").textContent = cam.stream
-    ? "The camera shows the table but doesn't read the dice yet: tap them in (left die first), then Roll." : "";
+  $("camera-status").title = full;
+  $("camera-full-status").textContent = full;
+  const model = S.me?.camera?.model;
+  $("camera-hint").textContent = !cam.stream ? "" : reader.on
+    ? `Throws go to ${$("player").selectedOptions[0]?.textContent || "this player"} on the ` +
+      `${S.tab === "tracker" ? "tracker (no bets)" : "table"}. Turn the picture so the back wall is at the top. ` +
+      `Wrong read? Tap the right dice (left die first), then Fix last.${model ? `  (${model})` : ""}`
+    : "The camera shows the table but doesn't read the dice here: tap them in (left die first), then Roll.";
   $("camera-show").setAttribute("aria-pressed", String(S.cameraPicture));
   $("camera-pop").hidden = !S.cameraPicture;
   $("camera-preview").hidden = !cam.stream;
@@ -1312,6 +1341,8 @@ async function startCamera(deviceId = cameraSaved("cameraDevice", "")) {
     $("camera-video").srcObject = stream;
     $("camera-video").play().catch(() => {});
     status("Camera on.");
+    cam.balance = await setWhiteBalance(track);
+    startReading();
   } catch (error) {
     cam.error = cameraProblem(error);
     status(cam.error, true);
@@ -1322,8 +1353,10 @@ async function startCamera(deviceId = cameraSaved("cameraDevice", "")) {
 }
 
 function stopCamera(draw = true) {
+  stopReading();
   if (cam.stream) for (const track of cam.stream.getTracks()) track.stop();
   cam.stream = null;
+  cam.balance = "";
   $("camera-video").srcObject = null;
   if (draw) drawCamera();
 }
@@ -1345,6 +1378,20 @@ function turnCamera() {
   drawPicture();
 }
 
+// The camera's newest frame drawn onto a canvas, turned by Turn. False when there's no frame yet.
+function drawTurned(video, canvas) {
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return false;
+  const side = cam.turn % 180 !== 0;
+  const cw = side ? h : w, ch = side ? w : h;
+  if (canvas.width !== cw || canvas.height !== ch) Object.assign(canvas, { width: cw, height: ch });
+  const g = canvas.getContext("2d");
+  g.setTransform(1, 0, 0, 1, cw / 2, ch / 2);
+  g.rotate((cam.turn * Math.PI) / 180);
+  g.drawImage(video, -w / 2, -h / 2, w, h);
+  return true;
+}
+
 // The picture: each new frame drawn onto the canvas, turned, while the panel is open and the page is in view.
 // One loop per stream: a stopped stream sends no more frames, so its loop just never comes back.
 let pictureLoop = { id: 0, stream: null, running: false };
@@ -1358,20 +1405,110 @@ function drawPicture() {
       loop.running = false;
       return;
     }
-    const w = video.videoWidth, h = video.videoHeight;
-    if (w && h) {
-      const side = cam.turn % 180 !== 0;
-      const cw = side ? h : w, ch = side ? w : h;
-      if (canvas.width !== cw || canvas.height !== ch) Object.assign(canvas, { width: cw, height: ch });
-      const g = canvas.getContext("2d");
-      g.setTransform(1, 0, 0, 1, cw / 2, ch / 2);
-      g.rotate((cam.turn * Math.PI) / 180);
-      g.drawImage(video, -w / 2, -h / 2, w, h);
-    }
+    drawTurned(video, canvas);
     next();
   };
   const next = () => (video.requestVideoFrameCallback ? video.requestVideoFrameCallback(frame) : requestAnimationFrame(frame));
   next();
+}
+
+// ---------------------------------------------------------------- reading the dice from this camera
+// The page sends the server its picture, turned as it shows it, up to READ_FPS times a second: the next one goes
+// once the last has arrived, so a slow connection sends fewer rather than piling them up. The server's reader
+// (dice_vision.py, tuned for the Brio over the table) rolls each throw it reads, as the desktop apps do, and the
+// news comes back on the live updates (camera_throw, camera_unclear). Full size, because a die is only about
+// 60 pixels across at 1920 and its pips need them all.
+const READ_FPS = 10, READ_QUALITY = 0.85;
+const reader = { on: false, busy: false, timer: 0, status: "", fps: null, canvas: null, restarts: 0, stopping: null };
+
+function cameraBinding() {
+  return { player_id: S.player, mode: S.tab === "tracker" ? "tracker" : "table", back_wall: $("back-wall").checked,
+    dice_set: currentSet(), position: currentPosition(), tz_offset: -new Date().getTimezoneOffset() };
+}
+
+// Automatic white balance turns the dice yellow once the red felt fills the picture, so it's fixed at the reader's
+// setting where the browser can (Chrome and Edge can on many webcams; Firefox can't). Says what was done.
+async function setWhiteBalance(track) {
+  if (!S.me?.camera?.allowed || !track.getCapabilities) return "";
+  let want;
+  try { want = (await api("/api/camera/settings")).white_balance; } catch { return ""; }
+  if (!want) return "";
+  const can = track.getCapabilities();
+  if (!can.whiteBalanceMode?.includes("manual") || !can.colorTemperature) return "white balance automatic (this browser can't set it)";
+  const kelvin = Math.min(can.colorTemperature.max, Math.max(can.colorTemperature.min, want));
+  try {
+    await track.applyConstraints({ advanced: [{ whiteBalanceMode: "manual", colorTemperature: kelvin }] });
+    return `white balance ${kelvin} K`;
+  } catch {
+    return "white balance automatic (the camera refused)";
+  }
+}
+
+async function startReading() {
+  if (!S.me?.camera?.allowed || !cam.stream || reader.on) return drawCamera();
+  await reader.stopping;                 // switching cameras: the old reader's stop must land before this start
+  try {
+    S.me.camera = await api("/api/camera/start", { ...cameraBinding(), from_page: true });
+    Object.assign(reader, { on: true, status: "", fps: null });
+    status("Camera on and reading the dice. Throw when your bets are down.");
+    sendPicture();
+  } catch (error) {
+    reader.on = false;
+    status(`The camera is on but can't read the dice: ${error.message}`, true);
+  }
+  drawCamera();
+}
+
+function stopReading() {
+  if (!reader.on) return;
+  reader.on = false;
+  clearTimeout(reader.timer);
+  // keepalive, so the stop still goes out when the page is closing
+  reader.stopping = fetch("/api/camera/stop", { method: "POST", keepalive: true, credentials: "same-origin",
+    headers: { "X-Requested-With": "craps", "X-Client-Id": CLIENT } }).catch(() => {});
+}
+
+// The player, tab, dice set or position changed: the reader's throws go there now
+async function syncCamera() {
+  if (!reader.on) return;
+  try { await api("/api/camera/update", cameraBinding()); } catch (error) { status(error.message, true); }
+  drawCamera();
+}
+
+async function sendPicture() {
+  if (!reader.on || reader.busy) return;
+  const began = performance.now(), video = $("camera-video");
+  let wait = 1000 / READ_FPS;
+  reader.busy = true;
+  try {
+    if (video.paused) video.play().catch(() => {});      // a hidden video may be paused by the browser
+    reader.canvas ||= document.createElement("canvas");
+    const blob = drawTurned(video, reader.canvas)
+      ? await new Promise((done) => reader.canvas.toBlob(done, "image/jpeg", READ_QUALITY)) : null;
+    if (!blob) {
+      wait = 200;                                       // no frame yet, just started
+    } else {
+      const response = await fetch("/api/camera/picture", { method: "POST", body: blob, credentials: "same-origin",
+        headers: { "X-Requested-With": "craps", "X-Client-Id": CLIENT, "Content-Type": "image/jpeg" } });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        Object.assign(reader, { status: data.status, fps: data.fps, restarts: 0 });
+      } else if (response.status === 410 && reader.restarts < 3) {
+        // the reader stopped (it heard nothing for a while: the page was asleep, or the app restarted): start again
+        reader.restarts += 1;
+        reader.on = reader.busy = false;
+        return startReading();
+      } else {
+        reader.on = false;
+        status(data.error || `The dice reader stopped (${response.status}).`, true);
+      }
+    }
+  } catch {
+    wait = 2000;                                        // the connection dropped: keep trying, more slowly
+  }
+  reader.busy = false;
+  drawCamera();
+  if (reader.on) reader.timer = setTimeout(sendPicture, Math.max(0, wait - (performance.now() - began)));
 }
 
 // The picture's panel: hidden until asked for, and kept open or shut on this device
