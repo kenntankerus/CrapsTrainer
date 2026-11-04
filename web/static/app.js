@@ -473,9 +473,9 @@ function setTab(tab, save = true) {
   $("roll-button").textContent = tab === "table" ? "Roll" : "Log throw";
   $("virtual-button").hidden = tab !== "table";        // virtual dice settle bets; the tracker is for real throws
   $("last-card").hidden = tab !== "table";             // the tracker shows its own last throw
-  // Fix last, Undo and the message line sit under the last roll on the table, and under the dice on the tracker
-  if (tab === "table") $("bank").before($("entry-tools"), $("status"));
-  else $("entry").append($("entry-tools"), $("status"));
+  $("bank").hidden = tab !== "table";                  // and has no bankroll
+  // Fix last, Undo and the message line sit in the last roll on the table, and under the dice on the tracker
+  (tab === "table" ? $("last-card") : $("entry")).append($("entry-tools"), $("status"));
   document.body.classList.toggle("fit", tab === "table");   // the table fits the window; the tracker scrolls
   if (!$("status").textContent || $("status").classList.contains("hint")) status("");
   if (save) saveSettings({ tab });
@@ -676,7 +676,8 @@ function drawRack() {
 function drawTable() {
   const t = S.table;
   if (!t) return;
-  drawLayout($("layout"), S.layout, t, { flash: S.flash, hover: S.hover, moving: S.moving, hop: $("hop").value });
+  drawLayout($("layout"), S.layout, t, { flash: S.flash, hover: S.hover, moving: S.moving, hop: $("hop").value,
+    aspect: S.layoutAspect });
   $("money").textContent = `Rack ${money(t.bankroll)}   ·   On the table ${money(t.on_table)}   ·   ` +
     `${t.up >= 0 ? "Up" : "Down"} ${money(Math.abs(t.up))}`;
   $("comeout").checked = t.work_on_comeout;
@@ -899,7 +900,9 @@ function setupLayout() {
   const pick = () => {
     const wrap = $("layout-wrap"), fitted = getComputedStyle($("layout")).position === "absolute";
     const name = wrap.clientWidth >= 720 || (fitted && wrap.clientWidth > wrap.clientHeight) ? "wide" : "tall";
-    if (name !== S.layout) { S.layout = name; drawTable(); }
+    // fitted, the drawing takes the box's shape (the svg sits 8px inside it); rounded so a resize redraws now and then
+    const aspect = fitted ? Math.round(((wrap.clientWidth - 16) / Math.max(1, wrap.clientHeight - 16)) * 50) / 50 : null;
+    if (name !== S.layout || aspect !== S.layoutAspect) { S.layout = name; S.layoutAspect = aspect; drawTable(); }
   };
   new ResizeObserver(pick).observe($("layout-wrap"));
   pick();

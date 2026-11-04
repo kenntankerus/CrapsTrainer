@@ -78,7 +78,7 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .field-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 /* the dice pad, and the last roll beside it */
-.entry-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+.entry-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; margin-bottom: 12px; }
 .entry-row > .card { margin-bottom: 0; }
 /* as wide as the six dice: the buttons and messages wrap under them rather than widening the card */
 .entry { width: min-content; }
@@ -92,22 +92,24 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .pad button { padding: 4px; background: var(--inset); aspect-ratio: 1; min-height: 0; }
 .pad button svg { width: 100%; height: 100%; }
 .entry-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
-/* Kept no taller than the dice card:
-     Last roll       Fix last  Undo  Virtual roll   what got paid   Buy-in  Rebuy
-     dice  total     message                        (scrolls)       Reset   Run stats
-           state
+/* The last roll, kept no taller than the dice card:
+     LAST ROLL        message (or how to enter the dice)     Fix last  Undo  Virtual roll
+     dice  1-4 = 5    what got paid (scrolls) ...........................................
+           point is 5
    The payouts never make the card taller (contain: size): they scroll instead */
-.last-card { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-rows: auto 1fr;
+.last-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto 1fr;
   gap: 6px 18px; align-items: center; }
 .last-card > h2 { grid-column: 1; grid-row: 1; margin: 0; }
-.last-card > .last { grid-column: 1; grid-row: 2; min-height: 0; }
-.last-card > .entry-actions { grid-column: 2; grid-row: 1; margin: 0; flex-wrap: nowrap; }
-.last-card > .status { grid-column: 2; grid-row: 2; align-self: start; margin: 0; width: 0; min-width: 100%; }
-.last-card > .lines { grid-column: 3; grid-row: 1 / 3; align-self: stretch; contain: size; max-height: none; }
-.bank { grid-column: 4; grid-row: 1 / 3; display: grid; grid-template-columns: auto auto; gap: 8px; }
+.last-card > .status { grid-column: 2; grid-row: 1; margin: 0; }
+.last-card > .entry-actions { grid-column: 3; grid-row: 1; margin: 0; flex-wrap: nowrap; }
+.last-card > .last { grid-column: 1; grid-row: 2; min-height: 0; align-self: start; }
+.last-card > .lines { grid-column: 2 / 4; grid-row: 2; align-self: stretch; contain: size; max-height: none; }
 .last .words { display: flex; flex-direction: column; margin-left: 4px; }
 .last .words .total { margin-left: 0; font-size: 1.4rem; line-height: 1.2; }
 .last .words .state { font-size: .85rem; max-width: 200px; }
+/* the bankroll tile: two by two, the buttons the same width */
+.bank { display: grid; grid-template-columns: auto auto; gap: 8px; align-content: center; }
+.bank select { flex: 1; }
 
 /* the table */
 .table-grid { display: grid; grid-template-columns: minmax(0, 1fr) 270px; grid-template-areas: "layout rolls" "under under";
@@ -245,7 +247,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
   .roll { min-height: 46px; }
   .pad { grid-template-columns: repeat(6, 46px); margin-top: 8px; }
   .pad button { padding: 3px; }
-  .last-card { padding-top: 10px; padding-bottom: 10px; }
+  .last-card, .bank { padding-top: 10px; padding-bottom: 10px; }
   .rack { padding: 2px; gap: 8px; }
   .chip { width: 42px; height: 42px; font-size: .8rem; }
   .chip[aria-pressed="true"] { transform: translateY(-3px); }
@@ -258,7 +260,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
   .last-card > h2 { margin-bottom: .6rem; }
   .last-card > .lines { contain: none; max-height: 320px; margin-top: 8px; }
   .last-card > .entry-actions { margin-top: 10px; }
-  .bank { display: flex; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .entry-row { grid-template-columns: auto minmax(0, 1fr); }
+  .bank { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; }
   .under .money { white-space: normal; }
 }
 @media (max-width: 760px) {
