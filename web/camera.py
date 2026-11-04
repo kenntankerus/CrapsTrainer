@@ -89,6 +89,38 @@ def page_camera():
     return values if isinstance(values, dict) else {}
 
 
+class Evener:
+    """Evens out a camera's pictures to the felt measured when it was set up (felt_bgr at felt_level), for cameras
+    the browser can't set: each picture's colours scaled so the felt comes out the same whatever the camera's own
+    exposure and white balance do. Measured about once a second, and changed only when it's off by a tenth or more:
+    each change looks like movement to the reader. A camera whose controls the page set is near enough already."""
+
+    EVERY = 1.0
+
+    def __init__(self, settings):
+        self.settings = settings
+        self.gains = np.ones(3)
+        self.table = None
+        self.next = 0.0
+
+    def apply(self, frame):
+        from . import camera_setup
+        now = time.monotonic()
+        if now >= self.next:
+            self.next = now + self.EVERY
+            gains = camera_setup.even_gains(frame, self.settings["felt_bgr"], self.settings.get("felt_level") or 88,
+                                            self.settings.get("roi"))
+            if gains is not None and np.max(np.abs(gains / self.gains - 1)) >= 0.1:
+                self.gains = gains
+                self.table = None if np.all(np.abs(gains - 1) < 0.06) else camera_setup.gain_table(gains)
+        return frame if self.table is None else cv2.LUT(frame, self.table)
+
+    @property
+    def amount(self):
+        """How much the pictures are being brightened (above 1) or darkened, or None when they're left as they are."""
+        return None if self.table is None else round(float(np.mean(self.gains)), 2)
+
+
 class PagePictures:
     """Stands in for a webcam when the pictures come from the page: read() hands over the newest one the page
     has sent (an older one not yet read is skipped, as a webcam's buffer of one does). When none comes for
@@ -142,6 +174,7 @@ class CameraService:
         self._pump = None
         self.pictures = None         # PagePictures when the page sends the pictures, None for the server's webcam
         self.profile = None          # the settings the page's camera reads with (camera_profiles), while it reads
+        self.evener = None           # evens out its pictures, when it was set up (felt_bgr)
 
     # ---------------------------------------------------------------- starting and stopping
     def _source(self):
@@ -171,6 +204,7 @@ class CameraService:
                 values, _ = camera_profiles.effective(user["id"], camera_name)
                 dv.apply_settings(camera_profiles.reader_part(values))
                 self.profile = {**values, "_camera": camera_profiles.camera_key(camera_name)}
+                self.evener = Evener(values) if values.get("felt_bgr") else None
                 pictures = PagePictures()
                 # the page sends its picture as it shows it, turned by its own Turn button
                 camera = dv.DiceCamera(None, pictures, turn_pictures=False)
@@ -216,6 +250,7 @@ class CameraService:
             # back to the defaults, for the server's webcam and the next camera
             dv.apply_settings(camera_profiles.reader_part(camera_profiles.defaults()))
             self.profile = None
+            self.evener = None
         if owner and not quiet:
             events.publish(owner["user_id"], "camera", running=False)
 
@@ -229,6 +264,7 @@ class CameraService:
             values, _ = camera_profiles.effective(user["id"], camera_name)
             dv.apply_settings(camera_profiles.reader_part(values))
             self.profile = {**values, "_camera": profile["_camera"]}
+            self.evener = Evener(values) if values.get("felt_bgr") else None
 
     def picture(self, user, client, jpeg):
         """One picture from the page's camera. CameraError says why it isn't wanted: not reading
@@ -245,6 +281,9 @@ class CameraService:
         frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
         if frame is None:
             raise CameraError("That isn't a picture.")
+        evener = self.evener
+        if evener is not None:
+            frame = evener.apply(frame)
         pictures.push(frame)
         camera = self.camera
         if camera is None:
@@ -252,7 +291,8 @@ class CameraService:
         # what the reader found last and where it looks, in this picture's pixels, for the page to draw over
         # its own picture (a picture or so behind, as the reader works on the one before)
         return {"status": camera.status, "fps": round(camera.fps, 1) if camera.fps else None,
-                "dice": camera.seen_boxes(), "roi": dv.roi_of(frame), "size": [frame.shape[1], frame.shape[0]]}
+                "dice": camera.seen_boxes(), "roi": dv.roi_of(frame), "size": [frame.shape[1], frame.shape[0]],
+                "evened": evener.amount if evener is not None else None}
 
     # ---------------------------------------------------------------- what the camera sees
     def _run(self, camera):

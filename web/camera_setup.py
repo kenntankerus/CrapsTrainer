@@ -59,6 +59,49 @@ def using(values):
             dv.apply_settings(before)
 
 
+def felt_target(felt_bgr, level):
+    """The felt's colour as the reader should see it: as measured, at the brightness it was tuned on."""
+    bgr = np.array(felt_bgr, float)
+    return bgr * (float(level) / max(bgr.max(), 1.0))
+
+
+def even_gains(frame, felt_bgr, level, roi=None):
+    """How much to scale each colour (blue, green, red) so this picture's felt comes out as felt_target, or None when
+    the felt can't be told (too little of it in the picture). The felt is found by its hue and colour only, not its
+    brightness, which is what's off."""
+    small, scale = _small(frame, 240)
+    if roi:
+        k = max(frame.shape[:2]) / 1920 * scale
+        x0, y0, x1, y1 = (int(v * k) for v in roi)
+        small = small[y0:y1, x0:x1]
+    if small.size == 0:
+        return None
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    hue, sat, _ = (int(v) for v in cv2.cvtColor(np.uint8([[felt_bgr]]), cv2.COLOR_BGR2HSV)[0, 0])
+    felt = (_hue_distance(hsv[..., 0], hue) <= 12) & (hsv[..., 1] >= 0.4 * sat) & (hsv[..., 2] >= 8)
+    if felt.mean() < 0.2:
+        return None
+    measured = np.median(small[felt], axis=0).astype(float)
+    return np.clip(felt_target(felt_bgr, level) / np.maximum(measured, 1.0), 0.33, 3.0)
+
+
+def gain_table(gains):
+    """A lookup table that scales each colour by its gain, for cv2.LUT."""
+    ramp = np.arange(256, dtype=float)
+    return np.clip(np.stack([ramp * g for g in gains], axis=-1), 0, 255).astype(np.uint8).reshape(1, 256, 3)
+
+
+def even(frame, settings):
+    """The picture with its brightness and colour evened out to the felt measured at setup (felt_bgr, felt_level),
+    as the reader sees a camera's pictures; unchanged when that's near enough already, or not measured yet."""
+    if not settings.get("felt_bgr"):
+        return frame
+    gains = even_gains(frame, settings["felt_bgr"], settings.get("felt_level") or 88, settings.get("roi"))
+    if gains is None or np.all(np.abs(gains - 1) < 0.06):
+        return frame
+    return cv2.LUT(frame, gain_table(gains))
+
+
 def _small(frame, width=480):
     scale = width / max(frame.shape[:2])
     return cv2.resize(frame, (int(frame.shape[1] * scale), int(frame.shape[0] * scale)), interpolation=cv2.INTER_AREA), scale
@@ -201,7 +244,8 @@ def empty_table(frame, settings):
     x0, y0, x1, y1 = felt["felt_box"]
     box = [max(0, x0 - margin), max(0, y0 - margin), min(w, x1 + margin), min(h, y1 + margin)]
     found = {"felt_hue": felt["felt_hue"], "felt_bgr": felt["felt_bgr"]}
-    roi, left_out, still = leave_out(frame, _to_reference(box, frame), {**settings, **found}, felt["things"], felt)
+    evened = even(frame, {**settings, **found, "roi": None})      # as the reader will see it
+    roi, left_out, still = leave_out(evened, _to_reference(box, frame), {**settings, **found}, felt["things"], felt)
     found["roi"] = roi
     return {"settings": found, "level": felt["level"], "left_out": left_out, "still": still}
 
@@ -259,6 +303,10 @@ def two_dice(frame, settings, empty=None):
     empty picture (if given) still shows no dice. Returns the settings found, what was read, and any warnings."""
     if settings.get("felt_hue") is None or not settings.get("felt_bgr"):
         raise SetupError("Measure the empty table first.")
+    # measured as the reader will see them, evened out to the felt (a camera the browser couldn't set)
+    frame = even(frame, settings)
+    if empty is not None:
+        empty = even(empty, settings)
     with using(settings):
         spots = _die_spots(frame, settings)
     if len(spots) < 2:
