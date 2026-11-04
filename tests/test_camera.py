@@ -406,3 +406,37 @@ def test_setup_steps_through_the_api(monkeypatch):
     assert c.post("/api/camera/setup/dice", json={"picture": picture(empty), "settings": draft}).status_code == 400
     assert c.post("/api/camera/setup/nope", json={"picture": picture(empty)}).status_code == 404
     assert c.post("/api/camera/setup/empty", json={"picture": "not a picture"}).status_code == 400
+
+
+def test_pictures_are_evened_out_to_the_measured_felt(monkeypatch):
+    # A camera the browser can't set changes its own exposure; its pictures are scaled back to the felt measured
+    # at setup, so the reader's numbers (pips, colours) still fit
+    from web import camera_setup
+    table = _table(laptop=False)
+    camera_demo.draw_die(table, 3, 800, 450, 20)
+    camera_demo.draw_die(table, 5, 1200, 600, 65)
+    settings = {"felt_bgr": [40.0, 30.0, 90.0], "felt_level": 90, "roi": None}
+    bright = cv2.convertScaleAbs(table, alpha=1.7)
+    evened = camera_setup.even(bright, settings)
+    felt = np.median(evened[300:400, 300:600].reshape(-1, 3), axis=0)
+    assert np.all(np.abs(felt - [40, 30, 90]) <= 4)
+    assert camera_setup.even(table, settings) is table            # near enough already: left alone
+
+    # while reading, pictures from a set-up camera are evened, and the page is told how much
+    monkeypatch.setattr(config, "CAMERA_SOURCE", "")
+    monkeypatch.setattr(config, "CAMERA_USERS", {EMAIL})
+    c = signed_in_client(EMAIL)
+    pid = me(c)["players"][0]["id"]
+    page = {"X-Client-Id": "page1"}
+    c.post("/api/camera/profile", json={"camera": "Phone", "settings": settings})
+    jpeg = cv2.imencode(".jpg", bright)[1].tobytes()
+    try:
+        c.post("/api/camera/start", json={"player_id": pid, "from_page": True, "camera": "Phone"}, headers=page)
+        answer = c.post("/api/camera/picture", content=jpeg, headers=page).json()
+        assert 0.5 < answer["evened"] < 0.7
+        wait_for(lambda: camera.service.camera.frame is not None)
+        seen = np.median(camera.service.camera.frame[300:400, 300:600].reshape(-1, 3), axis=0)
+        assert np.all(np.abs(seen - [40, 30, 90]) <= 6)
+    finally:
+        camera.service.stop()
+    c.post("/api/camera/profile/reset", json={"camera": "Phone"})

@@ -210,6 +210,11 @@ the button says what it sees and how many pictures a second get through.
      with those settings, and the empty table is checked again with them. `use_model` stays on only for dice the
      colour of the defaults' (the model knows the owner's green dice).
   4. *Save*. Cancel keeps what the camera had.
+- **Evening out**: once a camera is set up (it has `felt_bgr`), the server scales each of its pictures' colours so
+  the felt comes out as measured, at `felt_level`: for cameras the browser can't set (Firefox, Safari), whose
+  own exposure and white balance wander. Measured about once a second and changed only when off by a tenth (each
+  change looks like movement to the reader); a camera the page set is near enough and left alone. The status says
+  when it's brightening or darkening. It can't bring back dice already burned white.
 - The page sends the picture as it shows it, turned by *Turn*, and the server's `rotate` is left out. Turn
   the Brio's picture so the back wall is at the top and the shooter's end at the bottom: `roi` and `nadir`
   are measured in that picture.

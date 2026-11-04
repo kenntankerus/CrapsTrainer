@@ -76,10 +76,14 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   (`--use-file-for-fake-video-capture`, driven over its debugging port from Windows Python). **Works on the Brio**
   (PRs #13-#15, live): 34 of 34 throws read right on 2026-11-04 with both dice on the felt, none fixed by hand.
   The picture shows the reader's boxes (green read, yellow "?") and `roi` from each picture's answer, and *Mask*
-  shows `/api/camera/mask.jpg` (`dice_mask`: what could be a die). Step 1 of letting users tune their cameras;
-  next: settings per user and camera, then a guided setup (empty table: gain to the felt's brightness, felt
-  colour, search area, warn on die-like spots; two dice: their colour and size), then server-side brightness
-  correction for browsers that can't set exposure.
+  shows `/api/camera/mask.jpg` (`dice_mask`: what could be a die).
+- **Users tune their own cameras** (PRs #18-#21): settings per account and camera (`camera_profiles`, the camera
+  as the browser names it; none saved = `data/dice_settings.json`, the owner's Brio), the *Settings* JSON window,
+  *Set up* (`web/camera_setup.py`: exposure by gain for the felt's brightness, the felt, the search area leaving
+  out the laptop and die-like spots, then two dice: colour, wrapping round red; size; pips; both must read), and
+  evening out each picture to the measured felt (`Evener`) for cameras the browser can't set. The reader takes the
+  settings of the camera reading (`dv.apply_settings`; one reader at a time); setup measures with `using()`. Tested
+  on drawn tables, tonight's real Brio pictures and a test video in headless Chrome; Set up not yet run on the Brio.
   The 4 unclear pictures that night (something read as a die at the back wall, all within a minute) were likely
   the cat on the box: nothing to tune unless it comes back.
   The Brio's controls can be read and tried from this laptop: headless Windows Chrome (`--remote-debugging-port`,

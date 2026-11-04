@@ -1262,7 +1262,8 @@ function drawCamera() {
     text = `${track.label || "Camera"}${width ? `: ${width}x${height}` : ""}${frameRate ? ` @ ${Math.round(frameRate)} fps` : ""}`;
     full = text + (cam.controls ? `, ${cam.controls}` : "");
     if (reader.on) {
-      const reading = `Reading: ${reader.status || "starting"}${reader.fps ? ` (${reader.fps} pictures a second)` : ""}`;
+      const evened = reader.evened ? `, ${reader.evened > 1 ? "brightened" : "darkened"} ×${reader.evened}` : "";
+      const reading = `Reading: ${reader.status || "starting"}${reader.fps ? ` (${reader.fps} pictures a second${evened})` : ""}`;
       text = reading;
       full = `${full}. ${reading}`;
     }
@@ -1925,7 +1926,7 @@ async function sendPicture() {
       const data = await response.json().catch(() => ({}));
       if (response.ok) {
         Object.assign(reader, { status: data.status, fps: data.fps, restarts: 0, dice: data.dice || [],
-          roi: data.roi, size: data.size });
+          roi: data.roi, size: data.size, evened: data.evened });
       } else if (response.status === 410 && reader.restarts < 3) {
         // the reader stopped (it heard nothing for a while: the page was asleep, or the app restarted): start again
         reader.restarts += 1;
