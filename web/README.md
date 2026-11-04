@@ -148,13 +148,15 @@ up any cloud storage with `rclone config` (Cloudflare R2, Backblaze B2, Google D
 a second line, for example:
 
 ```
-45 3 * * * cd ~/CrapsTrainer && rclone sync data remote:craps-backup --exclude "voice_cache/**" --exclude "models/**" --exclude "craps.db*" --exclude "backup.log" >> data/backup.log 2>&1
+45 3 * * * cd ~/CrapsTrainer && rclone sync --s3-no-head data remote:craps-backup --exclude "voice_cache/**" --exclude "models/**" --exclude "craps.db*" --exclude "backup.log" >> data/backup.log 2>&1
 ```
 
 It leaves out the live database (the nightly copies in `backups/` are the safe ones; a copy taken while the
 app writes may not open) and `backup.log`, which this same line is writing to: uploading a file that grows
 while it's sent fails every night, and that noise would hide a real failure. Things that can be fetched or
-made again (the voice clips and the voice model) stay behind too.
+made again (the voice clips and the voice model) stay behind too. `--s3-no-head` is for Cloudflare R2 with an
+older rclone (Ubuntu's 1.60): after each upload it asks R2 for that version of the file, R2 answers "501 Not
+Implemented", and rclone calls the upload failed though it went through. The upload is still checked by its MD5.
 
 To restore: stop the app, copy a backup over `data/craps.db`, start it again.
 
