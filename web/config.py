@@ -73,6 +73,13 @@ CAMERA_SOURCE = _get("CAMERA")
 CAMERA_USERS = {e.strip().lower() for e in _get("CAMERA_USERS").split(",") if e.strip()}
 PREMIUM_USERS = {e.strip().lower() for e in _get("PREMIUM_USERS").split(",") if e.strip()} or CAMERA_USERS
 
+# Feature requests and bug reports from the menu are kept in the database and emailed here, with the sender as
+# Reply-To so answering is just Reply. Empty means the first of CRAPS_CAMERA_USERS (the owner); with neither,
+# they are only kept.
+FEEDBACK_EMAIL = (_get("FEEDBACK_EMAIL") or next(
+    (e.strip() for e in _get("CAMERA_USERS").split(",") if e.strip()), "")).lower()
+FEEDBACK_PER_DAY = 20              # reports per account per day, so a stuck button can't flood the inbox
+
 # Voices. ElevenLabs (the same key make_voice_pack.py uses) records the lines in your designed voices: list each
 # character's voice ID as  Name=ID; Name=ID  using the names in the Stickman list. Personal calls (names, payouts)
 # are made as they're needed, so only the accounts in CRAPS_PREMIUM_USERS get them from ElevenLabs, and no more

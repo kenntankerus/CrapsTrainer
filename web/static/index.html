@@ -37,6 +37,8 @@
   <section class="gate" id="signin" hidden>
     <div class="card narrow">
       <h1>Sign in</h1>
+      <p>Practise craps with your own dice: play a table that settles your bets, and see how your throws compare
+        to fair dice. <a href="#" id="signin-help">How it works</a></p>
       <p class="muted">Enter your email and we'll send you a link. No password: the link signs you in, and the first one makes your account.</p>
       <form id="signin-form">
         <label for="email">Email</label>
@@ -238,8 +240,14 @@
   <!-- dialogs -->
   <dialog id="menu">
     <form method="dialog" class="dialog-body">
-      <h2>Account</h2>
+      <h2>Menu</h2>
       <p class="muted" id="menu-email"></p>
+      <div class="stack">
+        <button type="button" id="menu-help">How it works</button>
+        <button type="button" id="menu-feature">Request a feature</button>
+        <button type="button" id="menu-bug">Report a bug</button>
+      </div>
+      <h3>Account</h3>
       <div class="stack">
         <button type="button" id="menu-name">Change my name</button>
         <button type="button" id="menu-players">Players at my table</button>
@@ -250,6 +258,71 @@
         <button type="button" class="danger" id="menu-delete">Delete my account</button>
       </div>
       <div class="dialog-actions"><button value="close">Close</button></div>
+    </form>
+  </dialog>
+
+  <!-- a feature request or a bug report, kept on the server and emailed to whoever runs it -->
+  <dialog id="feedback">
+    <form method="dialog" class="dialog-body">
+      <h2 id="feedback-title"></h2>
+      <p class="small muted" id="feedback-hint"></p>
+      <textarea id="feedback-text" rows="8" maxlength="5000" aria-labelledby="feedback-title"></textarea>
+      <p class="status" id="feedback-status" role="status"></p>
+      <div class="dialog-actions">
+        <button value="close">Cancel</button>
+        <button type="button" class="gold" id="feedback-send">Send</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- what the app is and how to use it: shown once on an account's first visit, and from the menu -->
+  <dialog id="help">
+    <form method="dialog" class="dialog-body help">
+      <h2>Craps Trainer</h2>
+      <p>Practise craps with your own dice. Throw real dice at your table, put in what they show (or let a camera
+        read them), and the app plays the table: it settles your bets in play money, the stickman calls the roll,
+        and every throw is logged so you can see whether your dice sets and positions do better than fair dice.</p>
+
+      <h3>Putting in a throw</h3>
+      <ul>
+        <li>Tap the two dice on the dice card, left die first, then <b>Roll</b>. On a keyboard, type them
+          (<kbd>6</kbd> <kbd>2</kbd>) and press <kbd>Enter</kbd>.</li>
+        <li>Put in the wrong dice? Tap the right ones and press <b>Fix last</b> (<kbd>F2</kbd>).
+          <b>Undo</b> (<kbd>Ctrl</kbd>+<kbd>Z</kbd>) takes the last throw back.</li>
+        <li><b>Virtual roll</b> throws random dice for you, to play the bets. Virtual rolls don't count in your stats.</li>
+      </ul>
+
+      <h3>The table</h3>
+      <ul>
+        <li>Pick a chip from the tray under the layout, then tap a spot to bet it. To take a bet down or move it,
+          press and hold it (on a computer: right-click it, or drag it).</li>
+        <li>The bankroll tile sets your buy-in. <b>Rebuy</b> adds another, <b>Reset bankroll</b> starts over, and
+          <b>Run stats</b> shows how the session went, bet by bet.</li>
+      </ul>
+
+      <h3>The tracker</h3>
+      <ul>
+        <li>Before you throw, choose your <b>Dice set</b> and how you hold the dice ("face up - face toward you":
+          6-2 is sixes on top with the twos facing you), your <b>Position</b> at the table, and whether the dice hit
+          the back wall. Each throw is logged with them, from either tab.</li>
+        <li>The <b>Tracker</b> tab shows the shooter's run, the Small / Tall / All bonus, your totals against fair
+          dice, and, under <b>Compared by</b>, your sevens and numbers for each dice set or position, with whether
+          they're better than random.</li>
+      </ul>
+
+      <h3>The camera</h3>
+      <p><b>Start camera</b> shows the table through this device's camera; <b>Picture</b> shows or hides it. On
+        accounts set up for it, it also reads the dice, so throws go in by themselves (<b>Fix last</b> puts a wrong
+        read right). Otherwise, tap the dice in.</p>
+
+      <h3>Players, voice and sound</h3>
+      <p><b>Players…</b> in the name list adds guests, who play on your screen with their own bankroll and stats.
+        <b>Stickman</b> picks who calls the rolls, and <b>Sound</b> sets the volumes.</p>
+
+      <h3>From the menu</h3>
+      <p>Download your throws as a CSV file, see what we keep about you, and send a <b>feature request</b> or a
+        <b>bug report</b>. This page is in the menu too, under <b>How it works</b>.</p>
+      <div class="dialog-actions"><button value="close" class="gold">Let's play</button></div>
     </form>
   </dialog>
 

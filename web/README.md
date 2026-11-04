@@ -351,7 +351,9 @@ docker compose exec web python -m web.make_sounds
 
 ## Settings
 
-All in `.env`; `.env.example` lists them. The ones not covered above: `CRAPS_CAMERA` and `CRAPS_CAMERA_USERS` (see The camera), `CRAPS_DATA_DIR` (where the data
+All in `.env`; `.env.example` lists them. The ones not covered above: `CRAPS_CAMERA` and `CRAPS_CAMERA_USERS` (see The camera),
+`CRAPS_FEEDBACK_EMAIL` (where the menu's feature requests and bug reports are emailed, with the sender as
+Reply-To; the first camera user if empty. They're kept in the database's `feedback` table too), `CRAPS_DATA_DIR` (where the data
 lives), `CRAPS_TTS=0` (skip edge-tts and let the browser speak), `CRAPS_VOICE_PACKS` and
 `CRAPS_SITE_NAME`.
 

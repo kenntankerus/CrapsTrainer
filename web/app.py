@@ -14,6 +14,7 @@ import os
 import random
 import re
 import sys
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -336,6 +337,7 @@ class Settings(BaseModel):
     position: Optional[str] = Field(None, max_length=40)
     compare: Optional[str] = None
     tab: Optional[str] = Field(None, max_length=20)
+    welcomed: Optional[bool] = None          # "How it works" has been shown once, on the first visit
 
 
 class MeUpdate(BaseModel):
@@ -412,6 +414,34 @@ def export(user=Depends(signed_in)):
         writer.writerow({**dict(r), "back_wall": str(bool(r["back_wall"]))})
     return StreamingResponse(iter([out.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": 'attachment; filename="dice_throws.csv"'})
+
+
+# ---------------------------------------------------------------------- feature requests and bug reports
+class Feedback(BaseModel):
+    kind: str
+    text: str = Field(max_length=5000)
+    context: str = Field("", max_length=1000)
+
+
+@app.post("/api/feedback")
+def send_feedback(body: Feedback, user=Depends(signed_in)):
+    if body.kind not in ("feature", "bug"):
+        raise HTTPException(400, "That's neither a feature request nor a bug report.")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Write a few words first.")
+    context = body.context.strip() if body.kind == "bug" else ""
+    now = time.time()
+    with db.transaction() as conn:
+        sent = conn.execute("SELECT COUNT(*) FROM feedback WHERE user_id = ? AND created > ?",
+                            (user["id"], now - 86400)).fetchone()[0]
+        if sent >= config.FEEDBACK_PER_DAY:
+            raise HTTPException(429, "That's a lot for one day: send the rest tomorrow.")
+        conn.execute("INSERT INTO feedback (user_id, kind, text, context, created) VALUES (?, ?, ?, ?, ?)",
+                     (user["id"], body.kind, text, context, now))
+    if config.FEEDBACK_EMAIL:
+        mail.feedback_email(config.FEEDBACK_EMAIL, body.kind, user["email"], user["name"], text, context)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------- players at the table

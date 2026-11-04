@@ -16,11 +16,13 @@ from . import config
 log = logging.getLogger("craps.mail")
 
 
-def send(to, subject, text, html=None):
+def send(to, subject, text, html=None, reply_to=None):
     message = EmailMessage()
     message["From"] = config.MAIL_FROM
     message["To"] = to
     message["Subject"] = subject
+    if reply_to:
+        message["Reply-To"] = reply_to
     message["Message-ID"] = make_msgid(domain=config.MAIL_FROM.rpartition("@")[2].strip("> ") or None)
     message.set_content(text)
     if html:
@@ -70,3 +72,13 @@ def claim_email(to, link, host_name, guest_name, minutes):
             f'<p><a href="{link}" style="font-size:18px;font-weight:bold">Take my history</a></p>'
             f"<p>It works once, for the next {minutes} minutes.</p>")
     send(to, subject, text, html)
+
+
+def feedback_email(to, kind, sender, name, text, context):
+    """A feature request or bug report from the menu. Plain text only: it's the sender's own words."""
+    what = "Bug report" if kind == "bug" else "Feature request"
+    subject = f"{config.SITE_NAME} {what.lower()} from {name or sender}"
+    body = f"{what} from {name} <{sender}>:\n\n{text}\n"
+    if context:
+        body += f"\n--\n{context}\n"
+    send(to, subject, body, reply_to=sender)

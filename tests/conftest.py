@@ -23,4 +23,4 @@ def capture_mail(monkeypatch):
     SENT.clear()
     monkeypatch.setattr(config, "LINKS_PER_IP", 1000)       # every test signs in from the same address
     monkeypatch.setattr(config, "LINKS_PER_EMAIL", 1000)    # and some sign the same account in more than once
-    monkeypatch.setattr(mail, "send", lambda to, subject, text, html=None: SENT.append((to, subject, text)))
+    monkeypatch.setattr(mail, "send", lambda to, subject, text, html=None, reply_to=None: SENT.append((to, subject, text)))

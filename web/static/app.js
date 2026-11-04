@@ -269,6 +269,11 @@ async function boot(message = "") {
   status(message);
   connectLive();
   prefetchVoice();
+  // an account's first visit opens "How it works" (it's in the menu after that)
+  if (!S.settings.welcomed) {
+    if (!document.querySelector("dialog[open]")) showHelp();
+    saveSettings({ welcomed: true });
+  }
   await refresh();
 }
 
@@ -1049,8 +1054,72 @@ function setupMenu() {
       location.href = "/";
     } catch (error) { status(error.message, true); }
   });
+  $("menu-help").addEventListener("click", () => { $("menu").close(); showHelp(); });
+  $("menu-feature").addEventListener("click", () => { $("menu").close(); openFeedback("feature"); });
+  $("menu-bug").addEventListener("click", () => { $("menu").close(); openFeedback("bug"); });
+  $("feedback-send").addEventListener("click", sendFeedback);
+  $("feedback-text").addEventListener("input", () => { drafts[feedbackKind] = $("feedback-text").value; });
   $("add-guest").addEventListener("click", addGuest);
   $("guest-name").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); addGuest(); } });
+}
+
+// "How it works". The browser focuses its button, at the bottom, which would scroll the summary out of sight
+function showHelp() {
+  $("help").showModal();
+  $("help").scrollTop = 0;
+}
+
+// ---------------------------------------------------------------- feature requests and bug reports
+// What's been written is kept until it's sent, so closing the window by mistake doesn't lose it
+const drafts = { feature: "", bug: "" };
+let feedbackKind = "feature";
+
+function openFeedback(kind) {
+  feedbackKind = kind;
+  const bug = kind === "bug";
+  $("feedback-title").textContent = bug ? "Report a bug" : "Request a feature";
+  $("feedback-hint").textContent = (bug
+    ? "What happened, and what did you expect? Say what you did just before. Your browser, screen size and " +
+      "the tab you're on are sent with it."
+    : "What would you like Craps Trainer to do? Say how you'd use it.") +
+    ` Any answer goes to ${S.me.email}.`;
+  $("feedback-text").value = drafts[kind];
+  $("feedback-text").placeholder = bug ? "When I…" : "It would help if…";
+  $("feedback-status").textContent = "";
+  $("feedback-status").classList.remove("error");
+  $("feedback-send").disabled = false;
+  $("feedback").showModal();
+  $("feedback-text").focus();
+}
+
+// For a bug: what the page was doing, so it can be tried the same way
+function feedbackContext() {
+  const camera = cam.stream ? (reader.on ? "camera reading" : "camera on") : "camera off";
+  return [`Browser: ${navigator.userAgent}`,
+    `Screen ${screen.width}x${screen.height}, window ${innerWidth}x${innerHeight}, ${S.layout} layout`,
+    `Tab: ${S.tab}; ${camera}; page time ${localTime()}`].join("\n");
+}
+
+async function sendFeedback() {
+  const text = $("feedback-text").value.trim(), node = $("feedback-status");
+  if (!text) {
+    node.textContent = "Write a few words first.";
+    node.classList.add("error");
+    return;
+  }
+  $("feedback-send").disabled = true;
+  node.classList.remove("error");
+  node.textContent = "Sending…";
+  try {
+    await api("/api/feedback", { kind: feedbackKind, text, context: feedbackKind === "bug" ? feedbackContext() : "" });
+    drafts[feedbackKind] = "";
+    $("feedback").close();
+    status(feedbackKind === "bug" ? "Thanks: the bug report is sent." : "Thanks: the feature request is sent.");
+  } catch (error) {
+    node.textContent = error.message;
+    node.classList.add("error");
+    $("feedback-send").disabled = false;
+  }
 }
 
 async function reloadPlayers(message) {
@@ -2006,6 +2075,7 @@ async function start() {
   setupEntry();
   setupLayout();
   setupMenu();
+  $("signin-help").addEventListener("click", (event) => { event.preventDefault(); showHelp(); });
   guardSheet();
   setupCamera();
   setupMix();
