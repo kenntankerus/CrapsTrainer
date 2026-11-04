@@ -191,9 +191,15 @@ the button says what it sees and how many pictures a second get through.
 - The page sends the picture as it shows it, turned by *Turn*, and the server's `rotate` is left out. Turn
   the Brio's picture so the back wall is at the top and the shooter's end at the bottom: `roi` and `nadir`
   are measured in that picture.
-- Where the browser can, the camera's white balance is fixed at the reader's `white_balance` (Chrome and Edge
-  can on many webcams, Firefox can't); the camera's line in the picture panel says which. Exposure and focus
-  are left to the camera: the browser has no gain to go with a shorter exposure.
+- The page sets the camera's controls from the server's settings before sending: `white_balance`, and
+  `page_camera` in `data/dice_settings.json`, in the browser's names (read afresh, no restart needed). Left
+  automatic, the Brio brightens the picture for the dark felt until the dice burn out white. For the Brio in
+  Chrome on Windows: `{"exposureMode": "manual", "exposureTime": 625, "focusMode": "manual", "focusDistance": 15}`
+  gives about the brightness the reader was tuned on (Chrome's numbers there aren't the Linux ones: 312 is
+  black). Chrome and Edge can set these on many webcams, Firefox can't; the camera's line in the picture panel
+  says what was set. Stopping the camera puts its automatic modes back.
+- The search area (`roi`) has to stop short of the laptop at the near end: its lit screen read as two dice,
+  and changing all the time, it kept "throwing". Here it ends at 1530.
 - With no picture for 10 seconds (the page closed, or the device asleep) the reader stops; a page that's
   still open starts it again with its next picture. Only one page reads at a time: starting the camera on
   another device moves the reading there.
