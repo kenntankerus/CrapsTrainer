@@ -223,6 +223,14 @@ dialog { background: var(--card); color: var(--text); border: 1px solid var(--ed
 dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .dialog-body { padding: 18px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+#setup-picture { display: block; width: min(640px, 80vw); max-height: 55vh; object-fit: contain; border-radius: 8px;
+  background: var(--inset); touch-action: none; }
+.setup-steps { display: flex; gap: 14px; padding: 0; margin: 4px 0 10px; list-style: none; counter-reset: step; flex-wrap: wrap; }
+.setup-steps li { counter-increment: step; color: var(--muted); font-size: .9rem; }
+.setup-steps li::before { content: counter(step) ". "; }
+.setup-steps li.now { color: var(--gold); font-weight: 600; }
+.setup-steps li.done { color: var(--text); }
+#setup-text { max-width: min(640px, 80vw); }
 #camera-settings-text { width: min(640px, 80vw); font: 13px/1.4 ui-monospace, Consolas, monospace; background: var(--inset);
   color: var(--text); border: 1px solid var(--edge); border-radius: 8px; padding: 8px; box-sizing: border-box; }
 #ask-input { width: 100%; margin-top: 8px; }

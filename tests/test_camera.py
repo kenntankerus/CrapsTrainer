@@ -326,3 +326,83 @@ def test_each_camera_keeps_its_own_settings(monkeypatch):
     finally:
         camera.service.stop()
     assert dv.ROI == default_roi and dv.USE_MODEL is True
+
+
+def _table(felt=(40, 30, 90), laptop=True):
+    """A drawn table: felt, wood walls, and a laptop with a lit strip at the near end."""
+    frame = np.full((1080, 1920, 3), felt, np.uint8)
+    frame[:40, :] = (130, 160, 210)
+    frame[:, :30] = frame[:, 1890:] = (130, 160, 210)
+    if laptop:
+        frame[860:, :520] = (35, 35, 38)
+        frame[870:890, 40:480] = (230, 200, 120)
+    return frame
+
+
+def _red_die(frame, value, cx, cy, angle):
+    """A red die with white pips (camera_demo's dice are green)."""
+    layer = np.zeros_like(frame)
+    camera_demo.draw_die(layer, value, cx, cy, angle)
+    die = layer.any(axis=2)
+    body = die & (layer[..., 0] < 200)
+    frame[die] = layer[die]
+    frame[body] = (40, 30, 200)
+
+
+def test_setup_measures_the_table_and_dice():
+    from web import camera_profiles, camera_setup
+    import dice_vision as dv
+    settings = {**camera_profiles.defaults(), "roi": None}
+    empty = cv2.GaussianBlur(_table(), (5, 5), 0)
+    r = camera_setup.empty_table(empty, settings)
+    x0, y0, x1, y1 = r["settings"]["roi"]
+    assert y1 <= 860 and x0 <= 30 and x1 >= 1890        # stops above the laptop, takes in the walls
+    assert any(s.get("thing") for s in r["left_out"]) and not r["still"]
+    draft = {**settings, **r["settings"]}
+
+    # a die left on the "empty" table is said, not cut round
+    left = empty.copy()
+    camera_demo.draw_die(left, 4, 900, 500, 10)
+    with pytest.raises(camera_setup.SetupError, match="looks like a die"):
+        camera_setup.empty_table(left, settings)
+
+    dice = empty.copy()
+    camera_demo.draw_die(dice, 3, 800, 450, 20)
+    camera_demo.draw_die(dice, 5, 1200, 600, 65)
+    r = camera_setup.two_dice(dice, draft, empty)
+    assert r["read"] and [d["value"] for d in r["dice"]] == [3, 5]
+    assert r["settings"]["use_model"] is True          # green, like the dice the model learned
+
+    # red dice on green felt: their hues wrap round through red, and the model is left out
+    green = _table(felt=(60, 120, 30), laptop=False)
+    r = camera_setup.empty_table(green, settings)
+    draft = {**settings, **r["settings"]}
+    red = green.copy()
+    _red_die(red, 2, 700, 500, 15)
+    _red_die(red, 6, 1300, 400, 40)
+    r = camera_setup.two_dice(red, draft, green)
+    found = r["settings"]
+    assert r["read"] and [d["value"] for d in r["dice"]] == [2, 6]
+    assert found["hue_low"] > found["hue_high"] and found["use_model"] is False
+    with camera_setup.using({**draft, **found}):
+        assert [d["value"] for d in dv.find_dice(red)] == [2, 6]
+    assert dv.HUE_LOW <= dv.HUE_HIGH                     # put back afterwards
+
+
+def test_setup_steps_through_the_api(monkeypatch):
+    import base64
+    monkeypatch.setattr(config, "CAMERA_USERS", {EMAIL})
+    c = signed_in_client(EMAIL)
+    picture = lambda frame: "data:image/jpeg;base64," + base64.b64encode(cv2.imencode(".jpg", frame)[1].tobytes()).decode()
+    empty = _table()
+    r = c.post("/api/camera/setup/empty", json={"picture": picture(empty), "settings": {}})
+    assert r.status_code == 200, r.text
+    draft = r.json()["settings"]
+    dice = empty.copy()
+    camera_demo.draw_die(dice, 1, 900, 400, 0)
+    camera_demo.draw_die(dice, 6, 1300, 500, 30)
+    r = c.post("/api/camera/setup/dice", json={"picture": picture(dice), "empty": picture(empty), "settings": draft})
+    assert r.status_code == 200 and r.json()["read"], r.text
+    assert c.post("/api/camera/setup/dice", json={"picture": picture(empty), "settings": draft}).status_code == 400
+    assert c.post("/api/camera/setup/nope", json={"picture": picture(empty)}).status_code == 404
+    assert c.post("/api/camera/setup/empty", json={"picture": "not a picture"}).status_code == 400

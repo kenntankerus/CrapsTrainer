@@ -1275,7 +1275,8 @@ function drawCamera() {
     ? `Throws go to ${$("player").selectedOptions[0]?.textContent || "this player"} on the ` +
       `${S.tab === "tracker" ? "tracker (no bets)" : "table"}. Turn the picture so the back wall is at the top. ` +
       "Green boxes are dice it read, yellow ones it can't; it only looks inside the dashed line. " +
-      `Wrong read? Tap the right dice (left die first), then Fix last.${model ? `  (${model})` : ""}`
+      `Wrong read? Tap the right dice (left die first), then Fix last.${model ? `  (${model})` : ""}` +
+      (cam.profile && !cam.profile.saved ? " This camera isn't set up yet: Set up measures it and the table." : "")
     : "The camera shows the table but doesn't read the dice here: tap them in (left die first), then Roll.";
   $("camera-show").setAttribute("aria-pressed", String(S.cameraPicture));
   $("camera-pop").hidden = !S.cameraPicture;
@@ -1283,6 +1284,8 @@ function drawCamera() {
   $("camera-mask").hidden = !reader.on || !S.cameraMask;
   $("camera-mask-button").hidden = !S.me?.camera?.allowed;
   $("camera-settings-button").hidden = !S.me?.camera?.allowed;
+  $("camera-setup-button").hidden = !S.me?.camera?.allowed;
+  $("camera-setup-button").disabled = !cam.stream;
   $("camera-settings-button").disabled = !cam.stream;
   $("camera-mask-button").disabled = !reader.on;
   $("camera-mask-button").setAttribute("aria-pressed", String(S.cameraMask));
@@ -1459,6 +1462,299 @@ function drawMask() {
   };
   maskLoop = true;
   go();
+}
+
+// ---------------------------------------------------------------- setting up a camera
+// Measured, not asked: the page sets the camera's exposure to bring the empty felt to the brightness the reader
+// works at, then the server finds the felt, where to look and what to leave out (camera_setup.py), then the
+// dice's colour, size and pips from two dice lying on it. Nothing is kept until both dice read right and Save
+// is pressed. The reader waits meanwhile, so nothing is thrown by accident.
+const setup = { step: 0, draft: null, empty: null, dice: [], leftOut: [], measured: false, busy: false, drag: null };
+const SETUP_STEPS = [
+  "Turn the picture with Turn until the back wall is at the top and the shooter's end at the bottom.",
+  "Take the dice and anything else off the felt, then press Measure. The camera's exposure is set first " +
+    "(a few seconds), then the felt is found and where to look for dice.",
+  "Put two dice on the felt, apart from each other and from the walls, inside the dashed line. Then press Measure.",
+  "",
+];
+const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+
+function setupSay(text, bad = false) {
+  $("setup-status").textContent = text;
+  $("setup-status").classList.toggle("error", bad);
+}
+
+function drawSetup() {
+  const steps = [...$("setup-steps").children];
+  steps.forEach((li, i) => { li.classList.toggle("now", i === setup.step); li.classList.toggle("done", i < setup.step); });
+  if (SETUP_STEPS[setup.step]) $("setup-text").textContent = SETUP_STEPS[setup.step];
+  $("setup-back").disabled = setup.busy || setup.step === 0;
+  $("setup-turn").hidden = setup.step !== 0;
+  $("setup-again").hidden = !(setup.measured && (setup.step === 1 || setup.step === 3));
+  $("setup-again").disabled = setup.busy;
+  $("setup-go").disabled = setup.busy;
+  $("setup-go").textContent = setup.step === 3 ? "Save" : (setup.step === 1 || setup.step === 2) && !setup.measured ? "Measure" : "Next";
+}
+
+// The picture in the setup window: the camera turned, the search area (dashed, the rest shaded; drag its edges),
+// what was left out of it (orange) and the dice read (green)
+function setupScale(canvas) { return Math.max(canvas.width, canvas.height) / 1920; }
+
+function drawSetupPicture() {
+  const canvas = $("setup-picture"), video = $("camera-video");
+  if (!$("camera-setup").open) return;
+  if (drawTurned(video, canvas)) {
+    const g = canvas.getContext("2d"), w = canvas.width, h = canvas.height, k = setupScale(canvas);
+    const line = Math.max(2, Math.round(w / 250));
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const roi = setup.draft?.roi;
+    if (roi) {
+      const [x0, y0, x1, y1] = roi.map((v) => v * k);
+      g.fillStyle = "rgba(0, 0, 0, 0.45)";
+      g.fillRect(0, 0, w, y0); g.fillRect(0, y1, w, h - y1); g.fillRect(0, y0, x0, y1 - y0); g.fillRect(x1, y0, w - x1, y1 - y0);
+      g.setLineDash([line * 4, line * 3]); g.strokeStyle = "rgba(120, 220, 255, 0.95)"; g.lineWidth = line;
+      g.strokeRect(x0, y0, x1 - x0, y1 - y0); g.setLineDash([]);
+    }
+    g.lineWidth = line;
+    g.font = `bold ${Math.max(16, Math.round(w / 20))}px system-ui, sans-serif`;
+    for (const spot of setup.leftOut) {
+      const [x, y, bw, bh] = spot.box;
+      g.strokeStyle = "#ff9800"; g.strokeRect(x, y, bw, bh);
+    }
+    for (const die of setup.dice) {
+      const [x, y, bw, bh] = die.box, read = die.value != null;
+      g.strokeStyle = g.fillStyle = read ? "#3ddc84" : "#ffc107";
+      g.strokeRect(x - line * 2, y - line * 2, bw + line * 4, bh + line * 4);
+      g.fillText(read ? String(die.value) : "?", x, Math.max(y - line * 4, line * 10));
+    }
+  }
+  requestAnimationFrame(drawSetupPicture);
+}
+
+// Dragging the search area's edges: the nearest edge within reach of the pointer moves with it
+function setupPoint(event) {
+  const canvas = $("setup-picture"), box = canvas.getBoundingClientRect();
+  // the picture keeps its shape inside the canvas's box (object-fit: contain)
+  const fit = Math.min(box.width / canvas.width, box.height / canvas.height);
+  const left = box.left + (box.width - canvas.width * fit) / 2, top = box.top + (box.height - canvas.height * fit) / 2;
+  const k = setupScale(canvas);
+  return [(event.clientX - left) / fit / k, (event.clientY - top) / fit / k];
+}
+
+function setupDragging() {
+  const canvas = $("setup-picture");
+  canvas.addEventListener("pointerdown", (event) => {
+    const roi = setup.draft?.roi;
+    if (!roi || setup.busy || setup.step === 0) return;
+    const [x, y] = setupPoint(event), reach = 60;
+    const near = [["left", Math.abs(x - roi[0]), y >= roi[1] - reach && y <= roi[3] + reach],
+      ["right", Math.abs(x - roi[2]), y >= roi[1] - reach && y <= roi[3] + reach],
+      ["top", Math.abs(y - roi[1]), x >= roi[0] - reach && x <= roi[2] + reach],
+      ["bottom", Math.abs(y - roi[3]), x >= roi[0] - reach && x <= roi[2] + reach]]
+      .filter(([, d, along]) => along && d < reach).sort((a, b) => a[1] - b[1]);
+    if (!near.length) return;
+    setup.drag = near[0][0];
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!setup.drag) return;
+    const [x, y] = setupPoint(event), roi = setup.draft.roi, edge = { left: 0, top: 1, right: 2, bottom: 3 }[setup.drag];
+    const value = Math.round(edge % 2 ? y : x);
+    const limit = (edge % 2 ? canvas.height : canvas.width) / setupScale(canvas);
+    roi[edge] = edge < 2 ? Math.max(0, Math.min(value, roi[edge + 2] - 50)) : Math.min(limit, Math.max(value, roi[edge - 2] + 50));
+  });
+  const drop = () => {
+    if (setup.drag) setupSay("Moved the search area's edge. Measure again to check the empty table with it.");
+    setup.drag = null;
+  };
+  canvas.addEventListener("pointerup", drop);
+  canvas.addEventListener("pointercancel", drop);
+}
+
+// How bright the felt is: the middle of the picture, where the empty table is all felt, as the median of each
+// spot's brightest colour (how the server measures it)
+function feltLevel() {
+  const video = $("camera-video"), c = document.createElement("canvas");
+  c.width = 160; c.height = 90;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(video, 0, 0, 160, 90);
+  const d = g.getImageData(40, 22, 80, 46).data, levels = [];
+  for (let i = 0; i < d.length; i += 4) levels.push(Math.max(d[i], d[i + 1], d[i + 2]));
+  levels.sort((a, b) => a - b);
+  return levels[levels.length >> 1];
+}
+
+function onStep(value, range) {
+  const v = Math.min(range.max, Math.max(range.min, value));
+  return range.step ? Math.min(range.max, range.min + Math.round((v - range.min) / range.step) * range.step) : v;
+}
+
+// The camera's exposure, as far as the browser lets the page set it: a short exposure (about 1/30 s, so a
+// rolling die stays sharp and pictures keep coming) with the gain searched for the felt's brightness; failing
+// that the exposure itself; failing that the exposure compensation. Focus is left to find the table, then held.
+// Returns the controls set (for page_camera) and what to say.
+async function setExposure(track) {
+  const can = track.getCapabilities ? track.getCapabilities() : {};
+  const target = setup.draft.felt_level || 88, page = {};
+  const set = (c) => track.applyConstraints({ advanced: [c] }).catch(() => {});
+  if (setup.draft.white_balance && can.whiteBalanceMode?.includes("manual") && can.colorTemperature) {
+    await set({ whiteBalanceMode: "manual", colorTemperature: onStep(setup.draft.white_balance, can.colorTemperature) });
+  }
+  if (can.focusMode?.includes("manual") && can.focusDistance) {
+    if (can.focusMode.includes("continuous")) { setupSay("Focusing…"); await set({ focusMode: "continuous" }); await wait(2000); }
+    const focus = track.getSettings().focusDistance;
+    if (focus != null) { Object.assign(page, { focusMode: "manual", focusDistance: focus }); await set(page); }
+  }
+  let best = null;
+  const tryIt = async (controls) => {
+    await set(controls);
+    await wait(900);
+    const level = feltLevel();
+    setupSay(`Setting the exposure… the felt at ${level}, aiming for ${target}.`);
+    if (!best || Math.abs(level - target) < Math.abs(best.level - target)) best = { level, controls };
+    return level;
+  };
+  const search = async (make, low, high, steps, logScale) => {
+    for (let i = 0; i < steps; i++) {
+      const mid = logScale ? Math.sqrt(low * high) : (low + high) / 2, level = await tryIt(make(mid));
+      if (Math.abs(level - target) <= 4) return;
+      if (level < target) low = mid; else high = mid;
+    }
+  };
+  const gain = can.exposureCompensation, time = can.exposureTime;
+  if (can.exposureMode?.includes("manual") && time) {
+    const short = onStep(333, time);
+    if (gain) await search((g) => ({ exposureMode: "manual", exposureTime: short, exposureCompensation: onStep(g, gain) }), gain.min, gain.max, 8, false);
+    if (!best || Math.abs(best.level - target) > 12) {
+      const g = best?.controls.exposureCompensation;
+      await search((t) => ({ exposureMode: "manual", exposureTime: onStep(t, time), ...(g != null ? { exposureCompensation: g } : {}) }),
+        Math.max(time.min, 1), Math.min(time.max, 1000), 8, true);
+    }
+  } else if (gain) {
+    await search((g) => ({ exposureMode: "continuous", exposureCompensation: onStep(g, gain) }), gain.min, gain.max, 7, false);
+  } else {
+    return { page, said: "This browser can't set the camera's exposure, so the server evens out the brightness instead. " };
+  }
+  await set(best.controls);
+  await wait(900);
+  Object.assign(page, best.controls);
+  return { page, said: `Exposure set: the felt at ${best.level} (aiming for ${target}). ` };
+}
+
+function setupPicture() {
+  reader.canvas ||= document.createElement("canvas");
+  if (!drawTurned($("camera-video"), reader.canvas)) throw new Error("No picture from the camera yet.");
+  return reader.canvas.toDataURL("image/jpeg", 0.92);
+}
+
+async function setupMeasure() {
+  const track = cam.stream?.getVideoTracks()[0];
+  if (!track) return setupSay("The camera is off.", true);
+  setup.busy = true;
+  drawSetup();
+  try {
+    if (setup.step === 1) {
+      setup.dice = [];
+      const exposure = await setExposure(track);
+      setup.draft.page_camera = exposure.page;
+      setupSay("Finding the felt…");
+      const picture = setupPicture();
+      const r = await api("/api/camera/setup/empty", { picture, settings: setup.draft });
+      Object.assign(setup.draft, r.settings);
+      setup.empty = picture;
+      setup.leftOut = r.left_out;
+      setup.measured = true;
+      const things = r.left_out.length;
+      setupSay(exposure.said + "Found the felt. The dashed line is where it will look for dice" +
+        (things ? `, moved in past ${things === 1 ? "something" : `${things} things`} on the table (orange) that ` +
+          "would get in the way" : "") + ". Drag its edges to change it." +
+        (r.still.length ? " Something inside it still looks like a die: drag the line past it." : ""), r.still.length > 0);
+    } else if (setup.step === 2) {
+      setupSay("Measuring the dice…");
+      const r = await api("/api/camera/setup/dice", { picture: setupPicture(), empty: setup.empty, settings: setup.draft });
+      Object.assign(setup.draft, r.settings);
+      setup.dice = r.dice;
+      setup.leftOut = r.left_out;
+      setup.measured = true;
+      if (r.read) {
+        setup.step = 3;
+        setup.measured = true;
+        $("setup-text").textContent = `It read ${r.dice.map((d) => d.value).join(" and ")}. If that's right, Save keeps ` +
+          "these settings for this camera; if not, Measure again.";
+        setupSay(r.warnings.join(" "), r.warnings.length > 0);
+      } else {
+        setup.measured = false;
+        setupSay(`It found ${r.dice.length === 2 ? "the dice" : `${r.dice.length} dice`} but couldn't read ` +
+          `${r.dice.length === 2 ? "them both" : "two"}. Move them apart and Measure again. ${r.warnings.join(" ")}`, true);
+      }
+    }
+  } catch (error) {
+    setupSay(error.message, true);
+  }
+  setup.busy = false;
+  drawSetup();
+}
+
+async function setupSave() {
+  setup.busy = true;
+  drawSetup();
+  try {
+    const profile = await api("/api/camera/profile", { camera: cameraLabel(), settings: setup.draft });
+    cam.profile = profile;
+    $("camera-setup").close();
+    status("This camera is set up. Throw a few to check the reads.");
+  } catch (error) {
+    setupSay(error.message, true);
+  }
+  setup.busy = false;
+}
+
+async function openSetup() {
+  if (!cam.stream) return;
+  try {
+    cam.profile = await api(`/api/camera/profile?${new URLSearchParams({ camera: cameraLabel() })}`);
+  } catch (error) { status(error.message, true); return; }
+  stopReading();
+  Object.assign(setup, { step: 0, draft: JSON.parse(JSON.stringify(cam.profile.settings)), empty: null, dice: [],
+    leftOut: [], measured: false, busy: false, drag: null });
+  $("setup-which").textContent = `${cam.profile.camera}: ` +
+    (cam.profile.saved ? "set up before; this measures it again." : "not set up yet, reading with the defaults.");
+  setupSay("");
+  drawSetup();
+  $("camera-setup").showModal();
+  drawSetupPicture();
+}
+
+// The window closed (saved or not): the camera's controls and the reader as this camera's settings say
+async function closeSetup() {
+  const track = cam.stream?.getVideoTracks()[0];
+  if (track) cam.controls = await setCameraControls(track);
+  startReading();
+}
+
+function setupSetup() {
+  $("camera-setup-button").addEventListener("click", openSetup);
+  $("setup-turn").addEventListener("click", turnCamera);
+  $("setup-back").addEventListener("click", () => {
+    setup.step = Math.max(0, setup.step - 1);
+    setup.measured = setup.step === 1 && !!setup.empty;
+    setupSay("");
+    drawSetup();
+  });
+  $("setup-again").addEventListener("click", () => {
+    if (setup.step === 3) setup.step = 2;
+    setup.measured = false;
+    setupMeasure();
+  });
+  $("setup-go").addEventListener("click", () => {
+    if (setup.step === 0) { setup.step = 1; setup.measured = false; setupSay(""); drawSetup(); }
+    else if ((setup.step === 1 || setup.step === 2) && !setup.measured) setupMeasure();
+    else if (setup.step === 1) { setup.step = 2; setup.measured = false; setup.dice = []; setupSay(""); drawSetup(); }
+    else if (setup.step === 3) setupSave();
+  });
+  $("setup-cancel").addEventListener("click", () => $("camera-setup").close());
+  $("camera-setup").addEventListener("close", closeSetup);
+  setupDragging();
 }
 
 // The reader's settings for this camera, as JSON: the owner's way in to every number. Saved, the server reads with
@@ -1685,6 +1981,7 @@ function setupCamera() {
   $("camera-turn").addEventListener("click", turnCamera);
   $("camera-mask-button").addEventListener("click", () => showMask(!S.cameraMask));
   $("camera-settings-button").addEventListener("click", openCameraSettings);
+  setupSetup();
   $("camera-settings-save").addEventListener("click", () => saveCameraSettings());
   $("camera-settings-reset").addEventListener("click", () => saveCameraSettings(true));
   dragPanel($("camera-pop"), $("camera-pop-head"));

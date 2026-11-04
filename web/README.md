@@ -195,6 +195,21 @@ the button says what it sees and how many pictures a second get through.
   `use_model` (false leaves the dice model out: it only knows the dice it learned from), and `felt_bgr` /
   `felt_level` for evening out the brightness. The server runs one reader at a time, which takes the settings of
   the camera it's reading.
+- **Set up** (in the picture's panel) measures a camera and the table instead of asking for numbers
+  (`web/camera_setup.py`), and saves its settings once two dice read right:
+  1. *Turn* the picture so the back wall is at the top.
+  2. *Empty table*: the page sets the camera's exposure where the browser can (a short exposure, about 1/30 s,
+     with the gain searched until the felt is as bright as the reader was tuned on: `felt_level`, 88); focus finds
+     the table and is held. Then the server finds the felt (its colour, judged tightly enough that light wood of
+     the same hue isn't felt) and sets the search area to it plus a margin for dice at a wall. Things lying on the
+     felt (big and solid, like a laptop) are left out, then anything the reader takes for a die on the empty
+     table, each time moving in the edge that loses the least felt. A die-sized spot with felt all round it is
+     taken for a die left on the table, and said. The dashed line's edges can be dragged.
+  3. *Two dice*: their colour (hue_low to hue_high, wrapping round through red for red dice), their size
+     (min_die_area, two_dice_area) and how bright the pips are against them (white_level), then both must read
+     with those settings, and the empty table is checked again with them. `use_model` stays on only for dice the
+     colour of the defaults' (the model knows the owner's green dice).
+  4. *Save*. Cancel keeps what the camera had.
 - The page sends the picture as it shows it, turned by *Turn*, and the server's `rotate` is left out. Turn
   the Brio's picture so the back wall is at the top and the shooter's end at the bottom: `roi` and `nadir`
   are measured in that picture.
@@ -347,6 +362,7 @@ lives), `CRAPS_TTS=0` (skip edge-tts and let the browser speak), `CRAPS_VOICE_PA
 | `web/calls.py` | personal calls (payouts, names) and how the crowd reacts |
 | `web/get_voices.py`, `web/make_sounds.py` | fetching Kokoro's model and recording lines; recording room and crowd sounds |
 | `web/camera_profiles.py` | the dice reader's settings for each account's cameras |
+| `web/camera_setup.py` | Set up: measuring the felt, the search area and the dice from the page's pictures |
 | `web/camera.py` | the dice reader: runs `dice_vision.py` on the page's pictures (or the server's webcam), rolls each throw for whoever started it, tuning |
 | `web/camera_demo.py` | the pretend camera, for trying it out and for the tests |
 | `web/events.py` | live updates to open pages (server-sent events) |
