@@ -121,6 +121,10 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 - Seeing a page without the server: on the dev laptop (WSL, no Linux browser libraries) run the app on a throwaway
   data folder and screenshot it with the Windows Chrome (`chrome.exe --headless --screenshot --timeout=8000`,
   its own `--user-data-dir`). A server restarted on the same port isn't reached from Windows: use a new port.
+- **Help and feedback in the menu:** *How it works* (the app's summary and instructions) opens once on an account's
+  first visit (setting `welcomed`) and stays in the menu; the sign-in page links to it. *Request a feature* and
+  *Report a bug* are kept in the `feedback` table and emailed to `CRAPS_FEEDBACK_EMAIL` (empty: the first
+  `CRAPS_CAMERA_USERS` address) with the sender as Reply-To; a bug report adds the browser, screen and tab.
 - **Room noise is off for now** (`ROOM_NOISE = false` in `app.js`, which also hides its switch and slider). The
   owner asked for it; crowd reactions still play.
 - Testing changes: `python -m web` from the server's checkout listens on `127.0.0.1:8001` and serves `web/static`

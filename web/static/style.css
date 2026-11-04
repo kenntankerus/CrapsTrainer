@@ -222,6 +222,15 @@ dialog { background: var(--card); color: var(--text); border: 1px solid var(--ed
   width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
 dialog::backdrop { background: rgba(0, 0, 0, .55); }
 .dialog-body { padding: 18px; }
+#help { width: min(640px, calc(100vw - 32px)); }
+.help h3 { margin: 16px 0 4px; }
+.help p { margin: 4px 0; }
+.help ul { margin: 4px 0; padding-left: 20px; }
+.help li { margin: 4px 0; }
+kbd { font: .85em ui-monospace, Consolas, monospace; padding: 1px 5px; border: 1px solid var(--edge); border-radius: 4px;
+  background: var(--inset); }
+#feedback-text { width: 100%; box-sizing: border-box; font: inherit; background: var(--inset); color: var(--text);
+  border: 1px solid var(--edge); border-radius: 8px; padding: 8px; resize: vertical; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 #setup-picture { display: block; width: min(640px, 80vw); max-height: 55vh; object-fit: contain; border-radius: 8px;
   background: var(--inset); touch-action: none; }

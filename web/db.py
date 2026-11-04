@@ -97,6 +97,16 @@ CREATE TABLE IF NOT EXISTS camera_profiles (
     updated REAL NOT NULL,
     PRIMARY KEY (user_id, camera)
 );
+-- feature requests and bug reports sent from the menu; they go with the account when it's deleted
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,                         -- 'feature' or 'bug'
+    text TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '',           -- for a bug: the browser, the screen, the tab it was sent from
+    created REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS feedback_user ON feedback(user_id, created);
 -- characters sent to ElevenLabs each day, for CRAPS_ELEVENLABS_DAILY_CHARS
 CREATE TABLE IF NOT EXISTS tts_usage (
     day TEXT PRIMARY KEY,

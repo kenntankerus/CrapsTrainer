@@ -263,6 +263,36 @@ def test_reset_and_export_and_delete():
     assert db.one("SELECT COUNT(*) FROM throws WHERE player_id = ?", pid)[0] == 0
 
 
+def test_feedback_is_kept_and_emailed(monkeypatch):
+    monkeypatch.setattr(config, "FEEDBACK_EMAIL", "owner@example.com")
+    monkeypatch.setattr(config, "FEEDBACK_PER_DAY", 2)
+    c = signed_in_client("tester@example.com")
+    c.post("/api/me", json={"name": "Tess"})
+    assert c.post("/api/feedback", json={"kind": "praise", "text": "hi"}).status_code == 400
+    assert c.post("/api/feedback", json={"kind": "bug", "text": "   "}).status_code == 400
+    r = c.post("/api/feedback", json={"kind": "bug", "text": "Undo did nothing", "context": "Tab: table"})
+    assert r.status_code == 200, r.text
+    to, subject, text = SENT[-1]
+    assert to == "owner@example.com" and "bug report" in subject and "Tess" in subject
+    assert "Undo did nothing" in text and "Tab: table" in text and "tester@example.com" in text
+    # a feature request doesn't carry the page's details
+    assert c.post("/api/feedback", json={"kind": "feature", "text": "Show odds", "context": "x"}).status_code == 200
+    rows = db.all_rows("SELECT f.kind, f.context FROM feedback f JOIN users u ON u.id = f.user_id "
+                       "WHERE u.email = 'tester@example.com' ORDER BY f.id")
+    assert [(r["kind"], r["context"]) for r in rows] == [("bug", "Tab: table"), ("feature", "")]
+    assert c.post("/api/feedback", json={"kind": "feature", "text": "More"}).status_code == 429
+    # it goes with the account
+    assert c.post("/api/me/delete", json={"confirm": "DELETE"}).status_code == 200
+    assert db.one("SELECT COUNT(*) FROM feedback")[0] == 0
+
+
+def test_how_it_works_is_shown_once():
+    c = signed_in_client("newcomer@example.com")
+    assert not me(c)["settings"].get("welcomed")
+    c.post("/api/me", json={"settings": {"welcomed": True}})
+    assert me(c)["settings"]["welcomed"] is True
+
+
 def test_stickman_call_and_voice_fallback():
     c = signed_in_client("voice@example.com")
     pid = me(c)["players"][0]["id"]
