@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response as RawResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -586,6 +587,7 @@ class CameraBinding(BaseModel):
     dice_set: str = Field("", max_length=50)
     position: str = Field("", max_length=40)
     tz_offset: int = 0
+    from_page: bool = False          # the page sends the pictures from its own camera (POST /api/camera/picture)
 
 
 def binding_of(body, user):
@@ -604,7 +606,7 @@ def camera_status(user=Depends(camera_user)):
 @app.post("/api/camera/start")
 def camera_start(body: CameraBinding, request: Request, user=Depends(camera_user)):
     try:
-        camera.service.start(user, client_of(request), binding_of(body, user))
+        camera.service.start(user, client_of(request), binding_of(body, user), from_page=body.from_page)
     except camera.CameraError as error:
         raise HTTPException(409, str(error))
     changed(user, request, kind="camera")
@@ -627,6 +629,17 @@ def camera_stop(request: Request, user=Depends(camera_user)):
     except camera.CameraError as error:
         raise HTTPException(409, str(error))
     return camera.service.status(user)
+
+
+@app.post("/api/camera/picture")
+async def camera_picture(request: Request, user=Depends(camera_user)):
+    """A picture from the page's camera, as JPEG, for the dice reader. 410 means the reader has stopped (the page
+    starts it again); 409, that someone or some other page is reading."""
+    jpeg = await request.body()
+    try:
+        return await run_in_threadpool(camera.service.picture, user, client_of(request), jpeg)
+    except camera.CameraError as error:
+        raise HTTPException(410 if error.gone else 409, str(error))
 
 
 @app.get("/api/camera/preview.jpg")

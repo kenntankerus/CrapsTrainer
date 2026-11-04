@@ -238,3 +238,38 @@ def test_slow_slide_is_still_moving():
         cam.stop()
     assert kind == "throw" and payload["dice"] == (5, 6)
     assert reported_at > 7, f"reported at {reported_at:.1f} s, while the dice were still sliding"
+
+
+def test_pictures_from_the_page(monkeypatch):
+    # The page opens its own camera and sends its pictures; the server reads them as it reads its own webcam's
+    monkeypatch.setattr(config, "CAMERA_SOURCE", "")            # no webcam on the server: not needed for this
+    monkeypatch.setattr(config, "CAMERA_USERS", {EMAIL})
+    monkeypatch.setattr(camera, "PAGE_WAIT", 1.0)
+    c = signed_in_client(EMAIL)
+    pid = me(c)["players"][0]["id"]
+    page = {"X-Client-Id": "page1"}
+    assert c.post("/api/camera/picture", content=b"x", headers=page).status_code == 410      # not started yet
+    r = c.post("/api/camera/start", json={"player_id": pid, "mode": "tracker", "from_page": True}, headers=page)
+    assert r.status_code == 200 and r.json()["from_page"] is True
+    assert c.post("/api/camera/picture", content=b"not a picture", headers=page).status_code == 409
+    assert c.post("/api/camera/picture", content=b"x", headers={"X-Client-Id": "page2"}).status_code == 409
+
+    # the first dice are on the table before anyone throws, so (1, 5) is never logged
+    capture = camera_demo.DemoCapture([(1, 5), (3, 4), (6, 6)], fps=30, tumble=0.4, rest=2.0, seed=1)
+    try:
+        before = len(db.all_rows("SELECT * FROM throws WHERE player_id = ?", pid))
+        end = time.time() + 15
+        while time.time() < end:
+            _, frame = capture.read()
+            jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
+            assert c.post("/api/camera/picture", content=jpeg, headers=page).status_code == 200
+            rows = db.all_rows("SELECT * FROM throws WHERE player_id = ? ORDER BY id", pid)[before:]
+            if len(rows) >= 2:
+                break
+        assert [(r["die1"], r["die2"], r["source"]) for r in rows[:2]] == [(3, 4, "camera"), (6, 6, "camera")]
+        # the page goes quiet (closed): the reader stops by itself
+        wait_for(lambda: not camera.service.status({"email": EMAIL, "id": 0})["running"], 5)
+        assert "stopped coming" in camera.service.error
+        assert c.post("/api/camera/picture", content=jpeg, headers=page).status_code == 410
+    finally:
+        camera.service.stop()

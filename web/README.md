@@ -26,8 +26,8 @@ What's in this first version:
   clatter and chip clacks, mixed in the browser with a volume for each (the *Sound* button). The room
   and crowd dip while the stickman talks.
 * **The camera**: *Start camera* opens the camera of the device the page is on (a phone, a tablet,
-  the table's laptop) and shows the table in a panel. It doesn't read the dice yet: tap them in.
-  See [The camera](#the-camera).
+  the table's laptop) and shows the table in a panel. For the accounts in `CRAPS_CAMERA_USERS` the page
+  sends the picture to the server, which reads the dice and rolls each throw. See [The camera](#the-camera).
 * **Live updates**: a roll on your phone shows up on the laptop straight away, and the other way round.
 * Download all your throws as `dice_throws.csv`, or delete your account, from the menu.
 
@@ -168,8 +168,9 @@ Rent any small Linux server, install Docker, copy the `CrapsTrainer` folder (wit
 ## The camera
 
 **On the page.** *Start camera* (in the settings bar) asks the browser for this device's camera, so it works
-for anyone signed in, on any device, with nothing set up on the server. The picture never leaves the device.
-*Picture* shows it in a panel that floats over the page (drag it by its title).
+for anyone signed in, on any device, with nothing set up on the server. *Picture* shows it in a panel that
+floats over the page (drag it by its title). For most accounts the picture never leaves the device and the
+dice are tapped in; for the accounts in `CRAPS_CAMERA_USERS` the page reads them (next part).
 
 - The first start asks to allow the camera. Browsers only offer a camera to an `https` page (or
   `localhost`, so the `127.0.0.1:8001` test copy works too). If it was refused, allow it again in the
@@ -181,10 +182,25 @@ for anyone signed in, on any device, with nothing set up on the server. The pict
 - "In use by another app" on the table's laptop can mean the server is holding the Brio: its own camera
   (below) keeps running after the page closes, so restart the app to free it.
 
-**The server's webcam and dice reader.** Reading the dice still runs on the server, from a webcam plugged into
-it, but the page no longer starts it or has its Tune window: that comes back once the dice are read from the
-device's camera. The notes below are kept for then. Only the accounts in `CRAPS_CAMERA_USERS` can use it: with
-open sign-up, nobody else should be able to look through it.
+**Reading the dice.** For the accounts in `CRAPS_CAMERA_USERS` (with open sign-up, nobody else should be
+able to look through it), *Start camera* also starts the dice reader on the server: the page sends it the
+picture, full size as JPEG, up to 10 times a second (the next once the last has arrived, so a slow connection
+sends fewer). The server reads them with `dice_vision.py`, as it read its own webcam, and the status beside
+the button says what it sees and how many pictures a second get through.
+
+- The page sends the picture as it shows it, turned by *Turn*, and the server's `rotate` is left out. Turn
+  the Brio's picture so the back wall is at the top and the shooter's end at the bottom: `roi` and `nadir`
+  are measured in that picture.
+- Where the browser can, the camera's white balance is fixed at the reader's `white_balance` (Chrome and Edge
+  can on many webcams, Firefox can't); the camera's line in the picture panel says which. Exposure and focus
+  are left to the camera: the browser has no gain to go with a shorter exposure.
+- With no picture for 10 seconds (the page closed, or the device asleep) the reader stops; a page that's
+  still open starts it again with its next picture. Only one page reads at a time: starting the camera on
+  another device moves the reading there.
+
+**The server's own webcam.** The reader can still watch a webcam plugged into the server, as it did before
+the page had a camera, but the page no longer starts it or has its Tune window. The notes below are kept for
+the settings, which the page's pictures use too.
 
 **Try it without a webcam** (on your own computer, after `pip install -r requirements-web.txt`):
 
@@ -222,7 +238,7 @@ tuning the Brio on Linux:
   the red felt filling it the dice came out yellow and weren't found. 4000 keeps the felt purple.
 - `rotate` (0, 90, 180 or 270, clockwise) is for a camera turned on its side, to see more of a long table.
   It turns the picture back so the back wall is at the top and the shooter's left is the picture's left;
-  `roi` is then measured in the turned picture.
+  `roi` is then measured in the turned picture. The page's pictures come turned by its *Turn* instead.
 - `felt_hue` (OpenCV's 0-179; this red felt is 172) finds dice that glare has bleached to beige: a die-sized
   spot that isn't felt, with felt all round it. Without it only green counts, and a light over the table loses
   the dice under it. A die against a wall isn't ringed by felt, so that one still needs its green.
@@ -310,7 +326,7 @@ lives), `CRAPS_TTS=0` (skip edge-tts and let the browser speak), `CRAPS_VOICE_PA
 | `web/voice.py` | stickman clips: recorded packs, then ElevenLabs, Kokoro or edge-tts, made once and kept |
 | `web/calls.py` | personal calls (payouts, names) and how the crowd reacts |
 | `web/get_voices.py`, `web/make_sounds.py` | fetching Kokoro's model and recording lines; recording room and crowd sounds |
-| `web/camera.py` | the webcam: runs `dice_vision.py`, rolls each throw for whoever started it, tuning |
+| `web/camera.py` | the dice reader: runs `dice_vision.py` on the page's pictures (or the server's webcam), rolls each throw for whoever started it, tuning |
 | `web/camera_demo.py` | the pretend camera, for trying it out and for the tests |
 | `web/events.py` | live updates to open pages (server-sent events) |
 | `web/train.py` | retraining the dice reader from the saved pictures |
