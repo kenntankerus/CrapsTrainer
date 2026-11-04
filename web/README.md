@@ -194,10 +194,13 @@ the button says what it sees and how many pictures a second get through.
 - The page sets the camera's controls from the server's settings before sending: `white_balance`, and
   `page_camera` in `data/dice_settings.json`, in the browser's names (read afresh, no restart needed). Left
   automatic, the Brio brightens the picture for the dark felt until the dice burn out white. For the Brio in
-  Chrome on Windows: `{"exposureMode": "manual", "exposureTime": 625, "focusMode": "manual", "focusDistance": 15}`
-  gives about the brightness the reader was tuned on (Chrome's numbers there aren't the Linux ones: 312 is
-  black). Chrome and Edge can set these on many webcams, Firefox can't; the camera's line in the picture panel
-  says what was set. Stopping the camera puts its automatic modes back.
+  Chrome on Windows: `{"exposureMode": "manual", "exposureTime": 312.5, "exposureCompensation": 110,
+  "focusMode": "manual", "focusDistance": 15}` gives the brightness the reader was tuned on, at 30 pictures a
+  second. There Chrome's `exposureCompensation` is the camera's gain: give it every time, or manual exposure
+  keeps whatever gain the camera was left with and the same exposure comes out anywhere from black to right.
+  `exposureTime` 625 halves the frame rate (17 a second) and blurs rolling dice more. Chrome and Edge can set
+  these on many webcams, Firefox can't; the camera's line in the picture panel says what was set. Stopping the
+  camera puts its automatic modes back.
 - The search area (`roi`) has to stop short of the laptop at the near end: its lit screen read as two dice,
   and changing all the time, it kept "throwing". Here it ends at 1530.
 - With no picture for 10 seconds (the page closed, or the device asleep) the reader stops; a page that's
