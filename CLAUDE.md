@@ -69,7 +69,8 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   `/api/camera/picture` up to 10 a second, one at a time. `PagePictures` in `web/camera.py` stands in for the webcam;
   the server's `rotate` is skipped (`turn_pictures=False`), so the Brio's picture must be turned on the page (back
   wall at the top). The page sets the camera's controls from `white_balance` and `page_camera` (Brio in Chrome on
-  Windows: manual exposure 625, focus 15; automatic exposure burned the dice white). `roi` now ends at 1530: the
+  Windows: exposureTime 312.5 + exposureCompensation 110, which is the gain there, and focus 15; automatic
+  exposure burned the dice white, and without the gain the same exposure came out black one time, right the next). `roi` now ends at 1530: the
   Windows laptop's lit screen at the near end read as dice. 10 s with no picture stops the
   reader; the page restarts it on a 410. Tested with headless Windows Chrome fed a video of drawn dice
   (`--use-file-for-fake-video-capture`, driven over its debugging port from Windows Python); not yet on the Brio.
