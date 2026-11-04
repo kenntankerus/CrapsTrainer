@@ -695,6 +695,41 @@ def camera_profile_reset(body: CameraProfile, user=Depends(camera_user)):
     return answer
 
 
+class SetupPicture(BaseModel):
+    picture: str = Field(..., max_length=16_000_000)            # the page's picture, turned, as a JPEG data: URL
+    empty: Optional[str] = Field(None, max_length=16_000_000)   # the empty table's, for the two-dice step
+    settings: dict = {}                                         # the settings so far
+
+
+@app.post("/api/camera/setup/{step}")
+async def camera_setup_step(step: str, body: SetupPicture, user=Depends(camera_user)):
+    """Setting up a camera: measure the empty table (step "empty") or two dice on it ("dice"). Nothing is saved:
+    the page saves the settings once they read right."""
+    from . import camera_setup
+    if step not in ("empty", "dice"):
+        raise HTTPException(404, "No such step.")
+    owner = camera.service.owner
+    if camera.service.camera is not None:
+        if owner and owner["user_id"] != user["id"]:
+            raise HTTPException(409, f"{owner['user_name']} is using the dice reader.")
+        camera.service.stop(user, quiet=True)          # setting up its settings: the reader waits
+    try:
+        settings = {**camera_profiles.defaults(), **camera_profiles.clean(body.settings)}
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+
+    def measure():
+        frame = camera_setup.decode(body.picture)
+        if step == "empty":
+            return camera_setup.empty_table(frame, settings)
+        empty = camera_setup.decode(body.empty) if body.empty else None
+        return camera_setup.two_dice(frame, settings, empty)
+    try:
+        return await run_in_threadpool(measure)
+    except camera_setup.SetupError as error:
+        raise HTTPException(400, str(error))
+
+
 @app.get("/api/camera/settings")
 def camera_settings(user=Depends(camera_user)):
     return camera.service.settings()

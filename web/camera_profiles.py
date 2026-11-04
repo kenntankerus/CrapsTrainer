@@ -109,9 +109,7 @@ def clean(values):
             out[key] = page
         else:
             raise ValueError(f"{key} isn't a setting this can take.")
-    if out.get("hue_low", 0) > out.get("hue_high", 179):
-        raise ValueError("hue_low must not be above hue_high.")
-    return out
+    return out                        # hue_low above hue_high is allowed: the dice's hues wrap round through red
 
 
 def camera_key(camera):

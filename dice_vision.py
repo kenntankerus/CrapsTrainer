@@ -37,7 +37,8 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ------------------------------------------------------------------ settings
-HUE_LOW, HUE_HIGH = 35, 100     # which greens count as "die"
+HUE_LOW, HUE_HIGH = 35, 100     # which greens count as "die"; HUE_LOW above HUE_HIGH wraps round through red
+                                # (OpenCV's hues run 0-179 with red at both ends), for red dice
 SAT_LOW = 10                    # raise if the carpet speckles the mask, lower if the dice are pale
 VAL_LOW = 15                    # raise if dark patches show up, lower if the dice are very dark
 MIN_DIE_AREA = 3500              # smaller green blobs are ignored (for a 1920-wide picture)
@@ -436,7 +437,11 @@ def green_mask(area, scale=None):
     scale = scale_of(area) if scale is None else scale
     close_size = max(3, int(round(15 * scale)) | 1)     # odd number, shrinks for small pictures
     hsv = cv2.cvtColor(area, cv2.COLOR_BGR2HSV)
-    green = cv2.inRange(hsv, np.array([HUE_LOW, SAT_LOW, VAL_LOW]), np.array([HUE_HIGH, 255, 255]))
+    if HUE_LOW <= HUE_HIGH:
+        green = cv2.inRange(hsv, np.array([HUE_LOW, SAT_LOW, VAL_LOW]), np.array([HUE_HIGH, 255, 255]))
+    else:                                               # round through red: HUE_LOW-179 and 0-HUE_HIGH
+        green = (cv2.inRange(hsv, np.array([HUE_LOW, SAT_LOW, VAL_LOW]), np.array([179, 255, 255]))
+                 | cv2.inRange(hsv, np.array([0, SAT_LOW, VAL_LOW]), np.array([HUE_HIGH, 255, 255])))
     # "Open" removes speckles, "close" joins the pieces of a see-through die into one blob
     green = cv2.morphologyEx(green, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     return cv2.morphologyEx(green, cv2.MORPH_CLOSE, np.ones((close_size, close_size), np.uint8))

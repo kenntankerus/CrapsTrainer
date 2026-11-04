@@ -144,6 +144,8 @@
       <div class="camera-pop-head" id="camera-pop-head">
         <h2>Camera</h2>
         <span class="camera-pop-tools">
+          <button type="button" id="camera-setup-button" hidden
+                  title="Measure this camera and the table, so the dice reader reads them right">Set up</button>
           <button type="button" id="camera-settings-button" hidden
                   title="The dice reader's settings for this camera">Settings</button>
           <button type="button" id="camera-mask-button" aria-pressed="false" hidden
@@ -262,6 +264,25 @@
       </div>
       <p class="status" id="players-status" role="status"></p>
       <div class="dialog-actions"><button value="close">Done</button></div>
+    </form>
+  </dialog>
+
+  <!-- setting up the camera in use: measured from the empty table, then two dice, and saved for this camera -->
+  <dialog id="camera-setup">
+    <form method="dialog" class="dialog-body">
+      <h2>Set up this camera</h2>
+      <p class="small muted" id="setup-which"></p>
+      <ol class="setup-steps" id="setup-steps"><li>Turn</li><li>Empty table</li><li>Two dice</li><li>Save</li></ol>
+      <canvas id="setup-picture" aria-label="What the camera sees, with where the dice reader will look"></canvas>
+      <p id="setup-text"></p>
+      <p class="status" id="setup-status" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" id="setup-turn">Turn</button>
+        <button type="button" id="setup-back">Back</button>
+        <button type="button" id="setup-again" hidden>Measure again</button>
+        <button type="button" class="gold" id="setup-go">Next</button>
+        <button type="button" id="setup-cancel">Cancel</button>
+      </div>
     </form>
   </dialog>
 
