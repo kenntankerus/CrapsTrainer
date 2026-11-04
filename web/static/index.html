@@ -106,7 +106,7 @@
       </div>
     </section>
 
-    <div class="entry-row">
+    <div class="entry-row" id="entry-row">
       <section class="card entry" id="entry" aria-label="Dice">
         <div class="slots">
           <button type="button" class="slot" id="slot-0" aria-label="Left die"></button>
@@ -183,36 +183,46 @@
       </div>
     </section>
 
-    <!-- the throw tracker -->
+    <!-- the throw tracker. On a wide screen it's two columns: the dice and the last throw side by side, with
+         Small / Tall / All and the recent throws side by side under them; then the chart and the comparison
+         table in the right-hand column. setTab moves the dice card into its spot (#tracker-dice) -->
     <section id="tab-tracker" hidden>
       <div class="tracker-grid">
-        <div class="card">
-          <h2>Last throw</h2>
-          <div class="last" id="tracker-last"></div>
-          <div class="shooter" id="shooter"></div>
+        <div class="tracker-left">
+          <div class="tracker-row" id="tracker-dice">
+            <div class="card">
+              <h2>Last throw</h2>
+              <div class="last" id="tracker-last"></div>
+              <div class="shooter" id="shooter"></div>
+            </div>
+          </div>
+          <div class="tracker-row">
+            <div class="card">
+              <h2>Small / Tall / All</h2>
+              <div id="bonus"></div>
+            </div>
+            <div class="card">
+              <h2>Recent throws</h2>
+              <ul class="lines" id="recent"></ul>
+              <p class="small muted" id="accuracy"></p>
+            </div>
+          </div>
         </div>
-        <div class="card">
-          <h2>Small / Tall / All</h2>
-          <div id="bonus"></div>
+        <div class="tracker-right">
+          <div class="card">
+            <h2 id="chart-title">Totals</h2>
+            <p class="small muted">Bars are yours, red lines are fair dice.</p>
+            <svg id="chart" viewBox="0 0 490 185" role="img" aria-label="Totals chart"></svg>
+          </div>
+          <div class="card">
+            <div class="row wrap">
+              <h2 class="inline-h">Compared by</h2>
+              <select id="compare"></select>
+              <span class="small muted" id="fair"></span>
+            </div>
+            <div class="scroll-x"><table class="stats" id="stats-table"></table></div>
+          </div>
         </div>
-        <div class="card">
-          <h2>Recent throws</h2>
-          <ul class="lines" id="recent"></ul>
-          <p class="small muted" id="accuracy"></p>
-        </div>
-      </div>
-      <div class="card">
-        <div class="row wrap">
-          <h2 class="inline-h">Compared by</h2>
-          <select id="compare"></select>
-          <span class="small muted" id="fair"></span>
-        </div>
-        <div class="scroll-x"><table class="stats" id="stats-table"></table></div>
-      </div>
-      <div class="card">
-        <h2 id="chart-title">Totals</h2>
-        <p class="small muted">Bars are yours, red lines are fair dice.</p>
-        <svg id="chart" viewBox="0 0 490 185" role="img" aria-label="Totals chart"></svg>
       </div>
     </section>
   </main>

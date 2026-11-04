@@ -156,9 +156,16 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .loss { color: #f08a8a; }
 
 /* the tracker */
-.tracker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+/* Two rows of two on the left (the dice and the last throw; Small / Tall / All and the recent throws), and the
+   chart over the comparison table on the right. The tracker takes the whole width of a big screen, where the
+   1500px the table keeps to left the right-hand half of the window empty */
+.tracker-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 12px; align-items: start; }
+.tracker-left, .tracker-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tracker-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
+.tracker-row + .tracker-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .tracker-grid .card { margin-bottom: 0; }
-.tracker-grid + .card { margin-top: 12px; }
+#tracker-last { flex-wrap: wrap; }
+body.tracker main { max-width: none; }
 .shooter { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
 .puck { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   font-weight: 800; flex: none; }
@@ -255,9 +262,12 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
   .chip { width: 42px; height: 42px; font-size: .8rem; }
   .chip[aria-pressed="true"] { transform: translateY(-3px); }
 }
+/* too narrow for the table beside the rows: everything stacks, the rows of two staying rows */
+@media (max-width: 1599px) {
+  .tracker-grid { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 1100px) {
   .table-grid { grid-template-columns: minmax(0, 1fr); }
-  .tracker-grid { grid-template-columns: minmax(0, 1fr); }
   .table-grid { grid-template-areas: "layout" "under" "rolls"; }
   .last-card { display: block; }
   .last-card > h2 { margin-bottom: .6rem; }
@@ -269,6 +279,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); }
 }
 @media (max-width: 760px) {
   .entry-row { grid-template-columns: minmax(0, 1fr); }
+  .tracker-row, .tracker-row + .tracker-row { grid-template-columns: minmax(0, 1fr); }
   .entry { width: auto; }
   .camera-bar { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; }
   .camera-pop { top: 70px; }
