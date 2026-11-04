@@ -106,19 +106,13 @@
     </section>
 
     <div class="entry-row">
-      <section class="card entry" aria-label="Dice">
+      <section class="card entry" id="entry" aria-label="Dice">
         <div class="slots">
           <button type="button" class="slot" id="slot-0" aria-label="Left die"></button>
           <button type="button" class="slot" id="slot-1" aria-label="Right die"></button>
           <button type="button" class="gold roll" id="roll-button" disabled>Roll</button>
         </div>
         <div class="pad" id="pad" aria-label="Tap the dice: left die first"></div>
-        <div class="entry-actions">
-          <button type="button" id="fix-button" title="Put the dice above on the last throw (F2)">Fix last</button>
-          <button type="button" id="undo-button" title="Take back the last throw (Ctrl+Z)">Undo</button>
-          <button type="button" id="virtual-button" title="Let the computer throw random dice, to play with bets. Not counted in your stats.">Virtual roll</button>
-        </div>
-        <p class="status" id="status" role="status" aria-live="polite"></p>
       </section>
       <!-- on the table tab only: the tracker has its own last throw -->
       <section class="card last-card" id="last-card" aria-label="Last roll">
@@ -126,6 +120,14 @@
         <div class="last" id="last-roll"></div>
         <p class="muted" id="last-state"></p>
         <ul class="lines" id="payouts"></ul>
+        <!-- on the table these sit under the last roll, so the dice card stops at the dice; on the tracker
+             (no last-roll card) setTab moves them back under the dice -->
+        <div class="entry-actions" id="entry-tools">
+          <button type="button" id="fix-button" title="Put the dice above on the last throw (F2)">Fix last</button>
+          <button type="button" id="undo-button" title="Take back the last throw (Ctrl+Z)">Undo</button>
+          <button type="button" id="virtual-button" title="Let the computer throw random dice, to play with bets. Not counted in your stats.">Virtual roll</button>
+          <p class="status" id="status" role="status" aria-live="polite"></p>
+        </div>
       </section>
     </div>
 
@@ -160,6 +162,15 @@
                 <label class="toggle"><input type="checkbox" id="comeout"> All bets on during the come-out</label>
                 <label class="toggle"><input type="checkbox" id="sounds" checked> Chip sounds</label>
               </div>
+            </div>
+          </div>
+        </div>
+        <!-- the rolls, with the bankroll buttons under them: out of the strip under the layout, so the layout gets that room -->
+        <aside class="table-side">
+          <div class="card rolls-card">
+            <h2>Rolls</h2>
+            <ul class="lines" id="rolls"></ul>
+            <div class="rolls-actions">
               <div class="row wrap">
                 <button type="button" id="take-all">Take all down</button>
                 <label class="inline">Buy-in <select id="buy-in"></select></label>
@@ -169,12 +180,6 @@
               </div>
               <p class="small muted" id="layout-help"></p>
             </div>
-          </div>
-        </div>
-        <aside class="table-side">
-          <div class="card rolls-card">
-            <h2>Rolls</h2>
-            <ul class="lines" id="rolls"></ul>
           </div>
         </aside>
       </div>

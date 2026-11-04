@@ -473,6 +473,8 @@ function setTab(tab, save = true) {
   $("roll-button").textContent = tab === "table" ? "Roll" : "Log throw";
   $("virtual-button").hidden = tab !== "table";        // virtual dice settle bets; the tracker is for real throws
   $("last-card").hidden = tab !== "table";             // the tracker shows its own last throw
+  // Fix last, Undo and the message line sit under the last roll on the table, and under the dice on the tracker
+  (tab === "table" ? $("last-card") : $("entry")).append($("entry-tools"));
   document.body.classList.toggle("fit", tab === "table");   // the table fits the window; the tracker scrolls
   if (!$("status").textContent || $("status").classList.contains("hint")) status("");
   if (save) saveSettings({ tab });
