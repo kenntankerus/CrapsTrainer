@@ -470,7 +470,12 @@ function setTab(tab, save = true) {
   $("bank").hidden = tab !== "table";                  // and has no bankroll
   // Fix last, Undo and the message line sit in the last roll on the table, and under the dice on the tracker
   (tab === "table" ? $("last-card") : $("entry")).append($("entry-tools"), $("status"));
+  // the dice card heads the row above the table, and sits beside the last throw on the tracker
+  if (tab === "table") $("entry-row").prepend($("entry"));
+  else $("tracker-dice").prepend($("entry"));
+  $("entry-row").hidden = tab !== "table";
   document.body.classList.toggle("fit", tab === "table");   // the table fits the window; the tracker scrolls
+  document.body.classList.toggle("tracker", tab === "tracker");
   if (!$("status").textContent || $("status").classList.contains("hint")) status("");
   if (save) saveSettings({ tab });
 }
