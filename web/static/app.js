@@ -51,10 +51,13 @@ function saveSettings(values) {
   }, 400);
 }
 
+// With nothing to say, the line under the dice says how to enter them (it used to be a line of its own)
 function status(text, error = false) {
   const node = $("status");
-  node.textContent = text || "";
+  node.textContent = text || `Tap the two dice (left first), or type them, then ${$("roll-button").textContent}.`;
   node.classList.toggle("error", !!error);
+  node.classList.toggle("hint", !text);
+  node.classList.toggle("muted", !text);
 }
 
 function localTime() {
@@ -469,6 +472,9 @@ function setTab(tab, save = true) {
   $("tab-tracker").hidden = tab !== "tracker";
   $("roll-button").textContent = tab === "table" ? "Roll" : "Log throw";
   $("virtual-button").hidden = tab !== "table";        // virtual dice settle bets; the tracker is for real throws
+  $("last-card").hidden = tab !== "table";             // the tracker shows its own last throw
+  document.body.classList.toggle("fit", tab === "table");   // the table fits the window; the tracker scrolls
+  if (!$("status").textContent || $("status").classList.contains("hint")) status("");
   if (save) saveSettings({ tab });
 }
 
@@ -885,8 +891,10 @@ function setupLayout() {
   svg.addEventListener("pointerup", finish);
   svg.addEventListener("pointercancel", finish);
 
+  // Fitted to the window (style.css), the box can be wide but short: the tall layout would come out tiny
   const pick = () => {
-    const name = $("layout-wrap").clientWidth >= 720 ? "wide" : "tall";
+    const wrap = $("layout-wrap"), fitted = getComputedStyle($("layout")).position === "absolute";
+    const name = wrap.clientWidth >= 720 || (fitted && wrap.clientWidth > wrap.clientHeight) ? "wide" : "tall";
     if (name !== S.layout) { S.layout = name; drawTable(); }
   };
   new ResizeObserver(pick).observe($("layout-wrap"));
@@ -1229,8 +1237,8 @@ async function loadCamera() {
 
 function drawCamera() {
   const c = S.camera;
-  $("camera-card").hidden = !c?.allowed;
-  if (!c?.allowed) return;
+  $("camera-bar").hidden = !c?.allowed;
+  if (!c?.allowed) { $("camera-pop").hidden = true; return; }
   const button = $("camera-button");
   const elsewhere = c.running && !cameraMine();
   button.textContent = !c.running ? "Start camera" : elsewhere ? (c.mine ? "Use the camera here" : "Camera busy") : "Stop camera";
@@ -1243,12 +1251,16 @@ function drawCamera() {
     text = c.error;
   }
   $("camera-status").textContent = text;
+  $("camera-status").title = text;
+  $("camera-full-status").textContent = text;
   $("camera-hint").textContent = cameraMine()
     ? `Throws go to ${$("player").selectedOptions[0]?.textContent || "this player"} on the ${S.tab === "tracker" ? "tracker (no bets)" : "table"}. ` +
       "Wrong read? Tap the right dice (left die first), then Fix last." + (c.model ? `  (${c.model})` : "")
     : "";
   $("camera-tune").disabled = !c.running;
-  $("camera-preview").hidden = !c.running || !$("camera-show").checked;
+  $("camera-show").setAttribute("aria-pressed", String(S.cameraPicture));
+  $("camera-pop").hidden = !S.cameraPicture;
+  $("camera-preview").hidden = !c.running || !S.cameraPicture;
   previewLoop();
 }
 
@@ -1351,9 +1363,39 @@ function sendTuning(save = false) {
   tuneTimer = setTimeout(go, 150);
 }
 
+// The picture's panel: hidden until asked for, and kept open or shut on this device
+function showPicture(on) {
+  S.cameraPicture = on;
+  try { localStorage.setItem("craps.cameraPicture", on ? "1" : "0"); } catch { /* not kept */ }
+  drawCamera();
+}
+
+// Dragged by its title, so it can sit over whatever isn't needed just then
+function dragPanel(panel, handle) {
+  let grab = null;
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) return;
+    const box = panel.getBoundingClientRect();
+    grab = { dx: event.clientX - box.left, dy: event.clientY - box.top };
+    handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!grab) return;
+    const x = Math.min(Math.max(0, event.clientX - grab.dx), window.innerWidth - panel.offsetWidth);
+    const y = Math.min(Math.max(0, event.clientY - grab.dy), window.innerHeight - 40);
+    Object.assign(panel.style, { left: `${x}px`, top: `${y}px`, right: "auto" });
+  });
+  const drop = () => { grab = null; };
+  handle.addEventListener("pointerup", drop);
+  handle.addEventListener("pointercancel", drop);
+}
+
 function setupCamera() {
+  try { S.cameraPicture = localStorage.getItem("craps.cameraPicture") === "1"; } catch { S.cameraPicture = false; }
   $("camera-button").addEventListener("click", toggleCamera);
-  $("camera-show").addEventListener("change", drawCamera);
+  $("camera-show").addEventListener("click", () => showPicture(!S.cameraPicture));
+  $("camera-pop-close").addEventListener("click", () => showPicture(false));
+  dragPanel($("camera-pop"), $("camera-pop-head"));
   $("camera-tune").addEventListener("click", openTuning);
   $("tune-train").addEventListener("click", async () => {
     const button = $("tune-train"), report = $("train-report");
