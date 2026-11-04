@@ -61,7 +61,13 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
     `Custom L5-1 R5-1`, "Parallel" is Parallel Sixes. Older 3-V, All Sevens, Cross-Sixes and Parallel Sixes throws
     have no hold recorded.
   - The desktop apps get the set names and the 8 Hardway holds, but no hold picker for the other sets.
-- **The camera is on** (the Brio, by its `/dev/v4l/by-id` name in `CRAPS_CAMERA_DEVICE`), turned a quarter turn on its
+- **The camera is the device's** (branch `device-camera`): *Start camera* opens the camera of whatever the page is
+  on with the browser's `getUserMedia` (needs https or localhost) and draws it, turned by *Turn* (kept per camera on
+  that device), in the floating Camera panel. It doesn't read the dice yet: the owner wants camera access first and
+  reading later. The page no longer starts the server's webcam or has its Tune window; the server's camera code,
+  API and tests are untouched, for when reading comes back.
+- **The server's camera reader**, as tuned, for when reading comes back: the Brio (by its `/dev/v4l/by-id` name in
+  `CRAPS_CAMERA_DEVICE`), turned a quarter turn on its
   mount so the picture's long side runs along the table. Tuned in the server's `data/dice_settings.json`: `rotate` 270
   (turns the picture back: back wall at the top, the shooter's end at the bottom), `white_balance` 4000 (automatic
   white balance turned the dice yellow once the red felt filled the picture), exposure 400 + gain 70 (~14 pictures a

@@ -25,10 +25,9 @@ What's in this first version:
 * **Sound**: a busy-casino room, a crowd that cheers a point made and groans at a seven-out, dice
   clatter and chip clacks, mixed in the browser with a volume for each (the *Sound* button). The room
   and crowd dip while the stickman talks.
-* **The camera**: the webcam plugged into the server reads each throw, as in the desktop apps, and
-  rolls it (or logs it, on the Tracker tab) for whoever pressed *Start camera*. Every page that
-  account has open updates as the dice land. Tuning sliders, a live picture and retraining the dice
-  reader are all on the page, so the server needs no screen. See [The camera](#the-camera).
+* **The camera**: *Start camera* opens the camera of the device the page is on (a phone, a tablet,
+  the table's laptop) and shows the table in a panel. It doesn't read the dice yet: tap them in.
+  See [The camera](#the-camera).
 * **Live updates**: a roll on your phone shows up on the laptop straight away, and the other way round.
 * Download all your throws as `dice_throws.csv`, or delete your account, from the menu.
 
@@ -168,8 +167,24 @@ Rent any small Linux server, install Docker, copy the `CrapsTrainer` folder (wit
 
 ## The camera
 
-Only the accounts in `CRAPS_CAMERA_USERS` can start the camera or see its picture: with open
-sign-up, nobody else should be able to look through it.
+**On the page.** *Start camera* (in the settings bar) asks the browser for this device's camera, so it works
+for anyone signed in, on any device, with nothing set up on the server. The picture never leaves the device.
+*Picture* shows it in a panel that floats over the page (drag it by its title).
+
+- The first start asks to allow the camera. Browsers only offer a camera to an `https` page (or
+  `localhost`, so the `127.0.0.1:8001` test copy works too). If it was refused, allow it again in the
+  browser's site settings.
+- It starts the camera facing away from the screen (a phone's back camera). Once allowed, a list of the
+  device's cameras appears beside the button when there's more than one, and the choice is kept on that device.
+- *Turn* turns the picture a quarter turn at a time, for a camera on its side like the Brio. Each camera
+  keeps its own turn.
+- "In use by another app" on the table's laptop can mean the server is holding the Brio: its own camera
+  (below) keeps running after the page closes, so restart the app to free it.
+
+**The server's webcam and dice reader.** Reading the dice still runs on the server, from a webcam plugged into
+it, but the page no longer starts it or has its Tune window: that comes back once the dice are read from the
+device's camera. The notes below are kept for then. Only the accounts in `CRAPS_CAMERA_USERS` can use it: with
+open sign-up, nobody else should be able to look through it.
 
 **Try it without a webcam** (on your own computer, after `pip install -r requirements-web.txt`):
 
