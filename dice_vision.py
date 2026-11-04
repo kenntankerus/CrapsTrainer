@@ -87,6 +87,7 @@ FACE_SIZE = 64                  # each die's top face is straightened to this ma
 LAYOUT_TOLERANCE = 0.35         # how far pips may sit from the ideal layout (bigger = more forgiving)
 
 MODEL_FILE = os.path.join(HERE, "dice_model.npz")
+USE_MODEL = True                # False leaves the model out: it only knows the dice it was trained on
 MODEL_NEIGHBOURS = 7            # the model compares a die with this many similar saved dice
 MODEL_AGREEMENT = 0.8           # share of those that must agree before the model's answer is used
 
@@ -102,7 +103,7 @@ _SAVED_NAMES = {"hue_low": "HUE_LOW", "hue_high": "HUE_HIGH", "sat_low": "SAT_LO
                 "white_level": "WHITE_LEVEL", "exposure": "EXPOSURE", "roi": "ROI", "focus": "FOCUS",
                 "two_dice_area": "TWO_DICE_AREA", "gain": "GAIN", "exposure_linux": "EXPOSURE_LINUX",
                 "rotate": "ROTATE", "white_balance": "WHITE_BALANCE", "felt_hue": "FELT_HUE",
-                "nadir": "NADIR", "tilt": "TILT"}
+                "nadir": "NADIR", "tilt": "TILT", "use_model": "USE_MODEL"}
 
 
 def load_settings(path=None):
@@ -115,6 +116,15 @@ def load_settings(path=None):
     for key, name in _SAVED_NAMES.items():
         if key in saved:
             globals()[name] = saved[key]
+
+
+def apply_settings(values):
+    """Use these settings (keys as in dice_settings.json; others are left out) in place of the ones now in use.
+    They're this module's own, so there is one set at a time: the web server runs one reader at a time."""
+    for key, value in values.items():
+        name = _SAVED_NAMES.get(key)
+        if name:
+            globals()[name] = value
 
 
 def turn(frame):
@@ -242,7 +252,7 @@ def load_model(path=None):
 
 def model_guess(face):
     """Return (value, agreement) from the trained model, or (None, 0) if there is no model."""
-    if _model is None:
+    if _model is None or not USE_MODEL:
         return None, 0.0
     features, labels = _model
     distances = ((features - face_features(face)) ** 2).sum(axis=1)

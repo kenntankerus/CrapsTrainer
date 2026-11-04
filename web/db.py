@@ -89,6 +89,14 @@ CREATE TABLE IF NOT EXISTS lines (
     engine TEXT NOT NULL,
     created REAL NOT NULL
 );
+-- the dice reader's settings for each account's cameras (web/camera_profiles.py), the camera as the browser names it
+CREATE TABLE IF NOT EXISTS camera_profiles (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    camera TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    updated REAL NOT NULL,
+    PRIMARY KEY (user_id, camera)
+);
 -- characters sent to ElevenLabs each day, for CRAPS_ELEVENLABS_DAILY_CHARS
 CREATE TABLE IF NOT EXISTS tts_usage (
     day TEXT PRIMARY KEY,

@@ -144,6 +144,8 @@
       <div class="camera-pop-head" id="camera-pop-head">
         <h2>Camera</h2>
         <span class="camera-pop-tools">
+          <button type="button" id="camera-settings-button" hidden
+                  title="The dice reader's settings for this camera">Settings</button>
           <button type="button" id="camera-mask-button" aria-pressed="false" hidden
                   title="Show what the dice reader takes for dice: white could be a die">Mask</button>
           <button type="button" id="camera-turn" title="Turn the picture a quarter turn, for a camera on its side">Turn</button>
@@ -260,6 +262,24 @@
       </div>
       <p class="status" id="players-status" role="status"></p>
       <div class="dialog-actions"><button value="close">Done</button></div>
+    </form>
+  </dialog>
+
+  <!-- the dice reader's settings for the camera in use, kept for this account and this camera -->
+  <dialog id="camera-settings">
+    <form method="dialog" class="dialog-body">
+      <h2>Camera settings</h2>
+      <p class="small muted" id="camera-settings-which"></p>
+      <textarea id="camera-settings-text" rows="16" spellcheck="false" aria-label="The settings, as JSON"></textarea>
+      <p class="small muted">The dice reader's numbers (as in <code>dice_settings.json</code>), <code>page_camera</code>
+        (the controls this page sets on the camera, in the browser's names) and <code>white_balance</code>.
+        Saved, they apply at once.</p>
+      <p class="status" id="camera-settings-status" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" id="camera-settings-reset">Back to the defaults</button>
+        <button type="button" class="gold" id="camera-settings-save">Save</button>
+        <button value="close">Close</button>
+      </div>
     </form>
   </dialog>
 

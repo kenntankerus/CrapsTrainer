@@ -291,3 +291,38 @@ def test_page_camera_controls_come_from_the_settings_file(tmp_path, monkeypatch)
     assert c.get("/api/camera/settings").json()["page_camera"] == {}
     (tmp_path / "dice_settings.json").write_text(json.dumps({"page_camera": {"exposureMode": "manual", "exposureTime": 625}}))
     assert c.get("/api/camera/settings").json()["page_camera"] == {"exposureMode": "manual", "exposureTime": 625}
+
+
+def test_each_camera_keeps_its_own_settings(monkeypatch):
+    import dice_vision as dv
+    monkeypatch.setattr(config, "CAMERA_SOURCE", "")
+    monkeypatch.setattr(config, "CAMERA_USERS", {EMAIL, "camera2@example.com"})
+    c = signed_in_client(EMAIL)
+    pid = me(c)["players"][0]["id"]
+    page = {"X-Client-Id": "page1"}
+    default_roi = dv.ROI
+    # a camera with nothing saved reads with the defaults
+    r = c.get("/api/camera/profile", params={"camera": "Test Cam (1234:5678)"}).json()
+    assert r["saved"] is False and r["settings"]["roi"] == default_roi and r["settings"]["use_model"] is True
+    # settings are checked
+    for bad in ({"roi": [10, 10, 5, 50]}, {"hue_low": 300}, {"nope": 1}, {"page_camera": {"exposureMode": "off"}}):
+        assert c.post("/api/camera/profile", json={"camera": "Test Cam (1234:5678)", "settings": bad}).status_code == 400
+    r = c.post("/api/camera/profile", json={"camera": "Test Cam (1234:5678)", "settings": {
+        "roi": [0, 0, 500, 400], "use_model": False, "page_camera": {"exposureMode": "manual", "exposureTime": 312.5}}}).json()
+    assert r["saved"] is True and r["settings"]["roi"] == [0, 0, 500, 400] and r["settings"]["hue_low"] == dv.HUE_LOW
+    # they're this account's: another account's same camera still has the defaults
+    other = signed_in_client("camera2@example.com")
+    assert other.get("/api/camera/profile", params={"camera": "Test Cam (1234:5678)"}).json()["saved"] is False
+
+    # while that camera reads, the reader uses its settings; a change applies at once; stopped, the defaults are back
+    try:
+        assert c.post("/api/camera/start", json={"player_id": pid, "from_page": True, "camera": "Test Cam (1234:5678)"},
+                      headers=page).status_code == 200
+        assert dv.ROI == [0, 0, 500, 400] and dv.USE_MODEL is False
+        c.post("/api/camera/profile", json={"camera": "Test Cam (1234:5678)", "settings": {"roi": [0, 0, 600, 400]}})
+        assert dv.ROI == [0, 0, 600, 400] and dv.USE_MODEL is True        # left out: back to its default
+        c.post("/api/camera/profile/reset", json={"camera": "Test Cam (1234:5678)"})
+        assert dv.ROI == default_roi
+    finally:
+        camera.service.stop()
+    assert dv.ROI == default_roi and dv.USE_MODEL is True

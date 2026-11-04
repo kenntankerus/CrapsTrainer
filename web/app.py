@@ -32,7 +32,7 @@ from craps_engine import HOP_COMBOS, BetError, money  # noqa: E402
 from dice_stats import COMPARE_MODES, HARDWAY_SETUPS, HOLDS, SET_HOLDS, hold_label, set_name  # noqa: E402
 from stickman import DEFAULT_VOICE, VOICES, pack_name  # noqa: E402
 
-from . import auth, camera, db, events, mail, stats, tables, voice  # noqa: E402
+from . import auth, camera, camera_profiles, db, events, mail, stats, tables, voice  # noqa: E402
 
 log = logging.getLogger("craps")
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -588,6 +588,7 @@ class CameraBinding(BaseModel):
     position: str = Field("", max_length=40)
     tz_offset: int = 0
     from_page: bool = False          # the page sends the pictures from its own camera (POST /api/camera/picture)
+    camera: str = Field("", max_length=200)      # which camera, as the browser names it: its settings are used
 
 
 def binding_of(body, user):
@@ -606,7 +607,8 @@ def camera_status(user=Depends(camera_user)):
 @app.post("/api/camera/start")
 def camera_start(body: CameraBinding, request: Request, user=Depends(camera_user)):
     try:
-        camera.service.start(user, client_of(request), binding_of(body, user), from_page=body.from_page)
+        camera.service.start(user, client_of(request), binding_of(body, user), from_page=body.from_page,
+                             camera_name=body.camera)
     except camera.CameraError as error:
         raise HTTPException(409, str(error))
     changed(user, request, kind="camera")
@@ -657,6 +659,40 @@ async def camera_mask(user=Depends(camera_user)):
     if jpeg is None:
         raise HTTPException(404, "No picture yet.")
     return RawResponse(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+def profile_answer(camera_name, values_saved):
+    values, own = values_saved
+    return {"camera": camera_profiles.camera_key(camera_name), "saved": own, "settings": values}
+
+
+@app.get("/api/camera/profile")
+def camera_profile(camera: str = "", user=Depends(camera_user)):
+    """The settings this camera reads with: its own, or the defaults (saved: false)."""
+    return profile_answer(camera, camera_profiles.effective(user["id"], camera))
+
+
+class CameraProfile(BaseModel):
+    camera: str = Field("", max_length=200)
+    settings: dict = {}
+
+
+@app.post("/api/camera/profile")
+def camera_profile_save(body: CameraProfile, user=Depends(camera_user)):
+    try:
+        answer = profile_answer(body.camera, camera_profiles.save(user["id"], body.camera, body.settings))
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    camera.service.use_profile(user, body.camera)
+    return answer
+
+
+@app.post("/api/camera/profile/reset")
+def camera_profile_reset(body: CameraProfile, user=Depends(camera_user)):
+    """Back to the defaults for this camera."""
+    answer = profile_answer(body.camera, camera_profiles.forget(user["id"], body.camera))
+    camera.service.use_profile(user, body.camera)
+    return answer
 
 
 @app.get("/api/camera/settings")
