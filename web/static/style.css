@@ -210,7 +210,8 @@ table.stats td:first-child, table.stats th:first-child { text-align: left; }
 /* the picture takes the camera's own shape, turned (a camera on its side gives a tall one), short enough for the
    panel not to scroll. The video itself plays
    out of sight: kept on the page at all, as some phones stop a video that isn't */
-#camera-preview { display: block; width: 100%; height: auto; max-height: calc(100vh - 300px); object-fit: contain; border-radius: 8px; background: var(--inset); }
+#camera-preview, #camera-mask { display: block; width: 100%; height: auto; max-height: calc(100vh - 300px); object-fit: contain; border-radius: 8px; background: var(--inset); }
+#camera-preview[hidden], #camera-mask[hidden] { display: none; }
 #camera-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) 4.5em; gap: 6px 10px; align-items: center; }
 .sliders input[type="range"] { width: 100%; min-height: 32px; padding: 0; accent-color: var(--gold); border: 0; background: transparent; }

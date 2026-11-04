@@ -212,8 +212,12 @@ class CameraService:
             raise CameraError("That isn't a picture.")
         pictures.push(frame)
         camera = self.camera
-        return {"status": camera.status if camera else "stopped",
-                "fps": round(camera.fps, 1) if camera and camera.fps else None}
+        if camera is None:
+            return {"status": "stopped", "fps": None, "dice": [], "roi": None, "size": None}
+        # what the reader found last and where it looks, in this picture's pixels, for the page to draw over
+        # its own picture (a picture or so behind, as the reader works on the one before)
+        return {"status": camera.status, "fps": round(camera.fps, 1) if camera.fps else None,
+                "dice": camera.seen_boxes(), "roi": dv.roi_of(frame), "size": [frame.shape[1], frame.shape[0]]}
 
     # ---------------------------------------------------------------- what the camera sees
     def _run(self, camera):
@@ -298,6 +302,11 @@ class CameraService:
     def preview(self):
         camera = self.camera
         return camera.get_preview_jpeg() if camera is not None else None
+
+    def mask(self):
+        """The newest picture as the reader's mask: white where it could find a die."""
+        camera = self.camera
+        return camera.mask_jpeg() if camera is not None else None
 
     # ---------------------------------------------------------------- tuning
     def settings(self):

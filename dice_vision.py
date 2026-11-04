@@ -465,19 +465,42 @@ def pale_mask(area, scale, min_area, two_area):
     return out
 
 
-def find_dice(frame):
-    """Return one reading (see read_die) per die in the frame, left to right."""
+def roi_of(frame):
+    """ROI in this picture's pixels, [left, top, right, bottom], or None for the whole picture."""
+    if not ROI:
+        return None
+    scale = scale_of(frame)
+    return [int(v * scale) for v in ROI]
+
+
+def _search(frame):
+    """What find_dice looks in: the mask of die-coloured spots on the carpet (ROI), where that sits in the
+    picture, and the die sizes for this picture's scale."""
     scale = scale_of(frame)                             # 1.0 for a 1920x1080 picture
     min_area = MIN_DIE_AREA * scale * scale
-
-    # Only the carpet is searched; contours are shifted back so they match the full picture
-    x0, y0 = 0, 0
-    area = frame
-    if ROI:
-        x0, y0, x1, y1 = (int(v * scale) for v in ROI)
-        area = frame[y0:y1, x0:x1]
     two_area = TWO_DICE_AREA * scale * scale
-    green = green_mask(area, scale) | pale_mask(area, scale, min_area, two_area)
+    x0, y0, area = 0, 0, frame
+    roi = roi_of(frame)
+    if roi:
+        x0, y0, x1, y1 = roi
+        area = frame[y0:y1, x0:x1]
+    mask = green_mask(area, scale) | pale_mask(area, scale, min_area, two_area)
+    return mask, (x0, y0), min_area, two_area
+
+
+def dice_mask(frame):
+    """White where find_dice could find a die (green, or pale and ringed by felt), the size of the whole picture
+    and black outside ROI: for tuning, to see what the reader takes for dice."""
+    mask, (x0, y0), _, _ = _search(frame)
+    full = np.zeros(frame.shape[:2], np.uint8)
+    full[y0:y0 + mask.shape[0], x0:x0 + mask.shape[1]] = mask
+    return full
+
+
+def find_dice(frame):
+    """Return one reading (see read_die) per die in the frame, left to right."""
+    # Only the carpet is searched; contours are shifted back so they match the full picture
+    green, (x0, y0), min_area, two_area = _search(frame)
 
     contours, _ = cv2.findContours(green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     dice = []
@@ -572,6 +595,8 @@ class DiceCamera:
       camera.get_preview_png()   the latest small picture, for showing on screen
       camera.get_preview_jpeg()  the same picture as JPEG bytes, for a web page
       camera.view     "normal", or "mask" to show the green the dice are found by (for tuning)
+      camera.seen     the dice the reader found last (see read_die), as boxes for drawing: seen_boxes()
+      camera.frame    the newest picture, as read (turned); mask_jpeg() shows it as dice_mask sees it
       camera.reapply()  send changed FOCUS / EXPOSURE / GAIN to the camera
     "crops" are the straightened top faces, left die first, as PNG bytes.
     capture can be anything with read() and release() in place of a real camera (for tests, or the pictures
@@ -598,6 +623,8 @@ class DiceCamera:
         self._preview = None
         self._last_report = None      # die centres of the last thing we reported
         self._first_look = True       # the first time the picture settles is what was there before anyone threw
+        self.seen = []                # the dice found in the last picture read, for drawing over the live picture
+        self.frame = None
 
     @property
     def model_status(self):
@@ -662,6 +689,7 @@ class DiceCamera:
                 break
             if self.turn_pictures:
                 frame = turn(frame)
+            self.frame = frame
             frame_number += 1
             now = time.perf_counter()
             if self.resolution is None:
@@ -709,6 +737,7 @@ class DiceCamera:
                         baseline = small
                         self._report(recent, frame)
                 self.status = "watching..." if armed else f"settled ({len(dice)} dice)"
+            self.seen = dice
 
             if frame_number % 3 == 0:
                 self._make_preview(frame, dice)
@@ -785,6 +814,24 @@ class DiceCamera:
             with self._lock:
                 self._preview = data
                 self._preview_small = small
+
+    def seen_boxes(self):
+        """The dice found last, as [{"box": [x, y, w, h], "value": 1-6 or None, "method": ...}] in the picture's
+        pixels, for a page to draw over its own picture."""
+        return [{"box": [int(v) for v in cv2.boundingRect(d["contour"])], "value": d["value"], "method": d["method"]}
+                for d in self.seen]
+
+    def mask_jpeg(self, width=PREVIEW_WIDTH, quality=80):
+        """The newest picture as dice_mask sees it (white = could be a die, black outside ROI), small, as JPEG
+        bytes; None before the first picture."""
+        frame = self.frame
+        if frame is None:
+            return None
+        mask = dice_mask(frame)
+        scale = width / max(frame.shape[:2])
+        small = cv2.resize(mask, (int(frame.shape[1] * scale), int(frame.shape[0] * scale)), interpolation=cv2.INTER_AREA)
+        ok, jpeg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return jpeg.tobytes() if ok else None
 
     def get_preview_png(self):
         """Latest preview as base64 PNG text (what Tkinter's PhotoImage wants), or None."""
