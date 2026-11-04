@@ -196,17 +196,18 @@ table.stats td:first-child, table.stats th:first-child { text-align: left; }
 }
 .camera-pop-head { display: flex; align-items: center; justify-content: space-between; cursor: move; touch-action: none; user-select: none; }
 .camera-pop-head h2 { margin: 0; }
-.camera-pop-head button { font-size: 1.5rem; line-height: 1; }
+.camera-pop-tools { display: flex; align-items: center; gap: 6px; }
+.camera-pop-head .icon { font-size: 1.5rem; line-height: 1; }
+#camera-device { flex: 0 1 auto; min-width: 0; max-width: 14em; }
 .camera-pop p { margin: 8px 0 0; }
-/* the camera's own shape once a picture is in (a camera turned on its side sends a tall one), 16:9 until then */
-#camera-preview { display: block; width: 100%; max-height: calc(100vh - 200px); object-fit: contain; border-radius: 8px; background: var(--inset); aspect-ratio: auto 16 / 9; }
-#tune-preview { display: block; width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; background: var(--inset); aspect-ratio: auto 16 / 9; margin: 10px 0; }
+/* the picture takes the camera's own shape, turned (a camera on its side gives a tall one), short enough for the
+   panel not to scroll. The video itself plays
+   out of sight: kept on the page at all, as some phones stop a video that isn't */
+#camera-preview { display: block; width: 100%; height: auto; max-height: calc(100vh - 300px); object-fit: contain; border-radius: 8px; background: var(--inset); }
+#camera-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .sliders { display: grid; grid-template-columns: auto minmax(0, 1fr) 4.5em; gap: 6px 10px; align-items: center; }
 .sliders input[type="range"] { width: 100%; min-height: 32px; padding: 0; accent-color: var(--gold); border: 0; background: transparent; }
 .sliders output { text-align: right; font-variant-numeric: tabular-nums; }
-.sliders .auto { grid-column: 2 / 4; }
-.report { white-space: pre-wrap; font-size: .8rem; background: var(--inset); padding: 10px; border-radius: 8px; }
-dialog.wide-dialog { width: min(760px, calc(100vw - 24px)); }
 
 /* dialogs */
 dialog { background: var(--card); color: var(--text); border: 1px solid var(--edge); border-radius: 14px; padding: 0;

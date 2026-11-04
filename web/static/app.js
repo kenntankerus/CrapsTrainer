@@ -267,8 +267,6 @@ async function boot(message = "") {
   fillControls();
   setTab(S.settings.tab === "tracker" ? "tracker" : "table", false);
   status(message);
-  S.camera = S.me.camera;
-  drawCamera();
   connectLive();
   prefetchVoice();
   await refresh();
@@ -415,7 +413,6 @@ function setupControls() {
     S.player = Number($("player").value);
     S.flash = {};
     saveSettings({ player_id: S.player });
-    syncCamera();
     const name = $("player").selectedOptions[0].textContent;
     status(`${name} is throwing.`);
     await refresh();
@@ -423,24 +420,21 @@ function setupControls() {
   $("dice-set").addEventListener("change", async () => {
     await pickOther($("dice-set"), "New dice set", "dice_set");
     showSetup();
-    syncCamera();
     if (S.tab === "tracker") refresh();
   });
   $("hold").addEventListener("change", () => {
     saveSettings({ holds: { ...(S.settings.holds || {}), [$("dice-set").value]: $("hold").value } });
-    syncCamera();
     if (S.tab === "tracker") refresh();
   });
   for (const [id, key] of [["custom-left", "custom_left"], ["custom-right", "custom_right"]]) {
-    $(id).addEventListener("change", () => { saveSettings({ [key]: $(id).value }); syncCamera(); if (S.tab === "tracker") refresh(); });
+    $(id).addEventListener("change", () => { saveSettings({ [key]: $(id).value }); if (S.tab === "tracker") refresh(); });
   }
   $("position").addEventListener("change", async () => {
     await pickOther($("position"), "New position", "position");
-    syncCamera();
     if (S.tab === "tracker") refresh();
   });
-  $("voice").addEventListener("change", () => { saveSettings({ voice: $("voice").value }); prefetchVoice(); setTimeout(syncCamera, 500); });
-  $("back-wall").addEventListener("change", () => { saveSettings({ back_wall: $("back-wall").checked }); syncCamera(); });
+  $("voice").addEventListener("change", () => { saveSettings({ voice: $("voice").value }); prefetchVoice(); });
+  $("back-wall").addEventListener("change", () => { saveSettings({ back_wall: $("back-wall").checked }); });
   $("sounds").addEventListener("change", () => saveSettings({ sounds: $("sounds").checked }));
   $("compare").addEventListener("change", () => { saveSettings({ compare: $("compare").value }); refresh(); });
   $("hop").addEventListener("change", () => { saveSettings({ hop: $("hop").value }); drawTable(); });
@@ -461,7 +455,7 @@ function setupControls() {
     saveSettings({ buy_in: cents });
   });
   for (const button of $("tabs").querySelectorAll("button")) {
-    button.addEventListener("click", () => { setTab(button.dataset.tab); syncCamera(); refresh(); });
+    button.addEventListener("click", () => { setTab(button.dataset.tab); refresh(); });
   }
 }
 
@@ -1211,169 +1205,168 @@ function connectLive() {
       if (!mine && (m.player_id == null || m.player_id === S.player)) refresh();
     } else if (m.type === "players") {
       if (!mine) reloadPlayers().then(refresh).catch(() => {});
-    } else if (m.type === "camera") {
-      loadCamera();
-    } else if (m.type === "camera_throw") {
-      if (m.player_id === S.player) refresh(true);
-      if (mine) {
-        if ($("sounds").checked) sound.beep(true);
-        speak(m);
-        status(m.message);
-      }
-    } else if (m.type === "camera_unclear") {
-      if (mine) {
-        if ($("sounds").checked) sound.beep(false);
-        status(m.message, true);
-      }
-    } else if (m.type === "camera_error") {
-      status(m.message, true);
-      loadCamera();
     }
   };
 }
 
-// ---------------------------------------------------------------- the camera at the table
-function cameraMine() {
-  return !!(S.camera?.running && S.camera.mine && S.camera.client === CLIENT);
+// ---------------------------------------------------------------- the camera on this device
+// The browser opens the camera of whatever the page is on (a phone, a tablet, the table's laptop), so the server's
+// own webcam isn't needed. It only shows the table for now: the dice are still tapped in.
+const cam = { stream: null, error: "", starting: false, turn: 0 };
+
+function cameraSaved(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(`craps.${key}`)) ?? fallback; } catch { return fallback; }
 }
 
-function cameraBinding() {
-  return { player_id: S.player, mode: S.tab === "tracker" ? "tracker" : "table", back_wall: $("back-wall").checked,
-    dice_set: currentSet(), position: currentPosition(), tz_offset: -new Date().getTimezoneOffset() };
+function cameraKeep(key, value) {
+  try { localStorage.setItem(`craps.${key}`, JSON.stringify(value)); } catch { /* not kept */ }
 }
 
-async function loadCamera() {
-  if (!S.camera?.allowed) return;
-  try { S.camera = await api("/api/camera"); } catch { return; }
-  drawCamera();
+// Each camera keeps its own turn: a webcam on its side needs one, the phone's camera doesn't
+function cameraTurnOf(deviceId) {
+  return cameraSaved("cameraTurns", {})[deviceId] || 0;
 }
 
 function drawCamera() {
-  const c = S.camera;
-  $("camera-bar").hidden = !c?.allowed;
-  if (!c?.allowed) { $("camera-pop").hidden = true; return; }
+  const track = cam.stream?.getVideoTracks()[0];
   const button = $("camera-button");
-  const elsewhere = c.running && !cameraMine();
-  button.textContent = !c.running ? "Start camera" : elsewhere ? (c.mine ? "Use the camera here" : "Camera busy") : "Stop camera";
-  button.disabled = c.running && !c.mine;
-  let text = "Camera off";
-  if (c.running) {
-    const size = c.resolution ? `${c.resolution[0]}x${c.resolution[1]}${c.fps ? ` @ ${c.fps} fps` : ""}: ` : "";
-    text = elsewhere ? (c.mine ? "Running from your other device." : `${c.owner} is using it.`) : `Camera ${size}${c.status || "starting"}`;
-  } else if (c.error) {
-    text = c.error;
+  button.textContent = cam.stream ? "Stop camera" : cam.starting ? "Starting…" : "Start camera";
+  button.disabled = cam.starting;
+  let text = cam.error || "Camera off";
+  if (track) {
+    const { width, height, frameRate } = track.getSettings();
+    text = `${track.label || "Camera"}${width ? `: ${width}x${height}` : ""}${frameRate ? ` @ ${Math.round(frameRate)} fps` : ""}`;
   }
   $("camera-status").textContent = text;
   $("camera-status").title = text;
   $("camera-full-status").textContent = text;
-  $("camera-hint").textContent = cameraMine()
-    ? `Throws go to ${$("player").selectedOptions[0]?.textContent || "this player"} on the ${S.tab === "tracker" ? "tracker (no bets)" : "table"}. ` +
-      "Wrong read? Tap the right dice (left die first), then Fix last." + (c.model ? `  (${c.model})` : "")
-    : "";
-  $("camera-tune").disabled = !c.running;
+  $("camera-hint").textContent = cam.stream
+    ? "The camera shows the table but doesn't read the dice yet: tap them in (left die first), then Roll." : "";
   $("camera-show").setAttribute("aria-pressed", String(S.cameraPicture));
   $("camera-pop").hidden = !S.cameraPicture;
-  $("camera-preview").hidden = !c.running || !S.cameraPicture;
-  previewLoop();
+  $("camera-preview").hidden = !cam.stream;
+  $("camera-turn").disabled = !cam.stream;
+  drawPicture();
 }
 
-async function toggleCamera() {
-  sound.unlock();
+// The cameras the browser lists. Their names only show once the camera has been allowed, so the list is filled
+// after the first start; it shows only when there's a choice to make.
+async function listCameras() {
+  let cameras = [];
+  try { cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput" && d.deviceId); } catch { /* none */ }
+  const pick = clear($("camera-device"));
+  cameras.forEach((d, i) => { item(pick, "option", d.label || `Camera ${i + 1}`).value = d.deviceId; });
+  const using = cam.stream?.getVideoTracks()[0]?.getSettings().deviceId || cameraSaved("cameraDevice", "");
+  if (cameras.some((d) => d.deviceId === using)) pick.value = using;
+  pick.hidden = cameras.length < 2;
+}
+
+function cameraProblem(error) {
+  const name = error?.name;
+  if (name === "NotAllowedError" || name === "SecurityError")
+    return "The camera is blocked: allow it for this site in the browser's settings, then Start camera again.";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "No camera found on this device.";
+  if (name === "NotReadableError" || name === "AbortError")
+    return "The camera is in use by another app (or by the server: restart the app to free it).";
+  return `The camera wouldn't start: ${error?.message || error}`;
+}
+
+async function startCamera(deviceId = cameraSaved("cameraDevice", "")) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    cam.error = "This browser can't use the camera here (it needs the https address).";
+    return drawCamera();
+  }
+  cam.starting = true;
+  cam.error = "";
+  drawCamera();
+  // the camera picked last time, else the one facing away from the screen (a phone's back camera); as big a
+  // picture as it gives, up to full HD
+  const size = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+  const ask = (video) => navigator.mediaDevices.getUserMedia({ audio: false, video: { ...size, ...video } });
+  stopCamera(false);                       // many phones open only one camera at a time
   try {
-    if (cameraMine()) S.camera = await api("/api/camera/stop", {});
-    else S.camera = await api("/api/camera/start", cameraBinding());
-    status(S.camera.running ? "Camera on. Throw when your bets are down." : "Camera off.");
-  } catch (error) {
-    status(error.message, true);
-    await loadCamera();
-  }
-  drawCamera();
-}
-
-async function syncCamera() {
-  if (!cameraMine()) return;
-  try { S.camera = await api("/api/camera/update", cameraBinding()); } catch (error) { status(error.message, true); }
-  drawCamera();
-}
-
-// The picture: the next one is asked for once the last has arrived, a few times a second
-let previewBusy = false, statusTick = 0;
-function previewLoop() {
-  if (previewBusy) return;
-  const targets = [];
-  if (!$("camera-preview").hidden) targets.push($("camera-preview"));
-  if ($("tune-dialog").open) targets.push($("tune-preview"));
-  if (!S.camera?.running || !targets.length || document.hidden) return;
-  previewBusy = true;
-  const img = new Image();
-  img.onload = img.onerror = () => {
-    if (img.naturalWidth) for (const t of targets) t.src = img.src;
-    previewBusy = false;
-    if (++statusTick % 8 === 0) loadCamera(); else setTimeout(previewLoop, 250);
-  };
-  img.src = `/api/camera/preview.jpg?t=${Date.now()}`;
-}
-
-// The tuning sliders: dice_camera_test.py's, for a camera on a computer with no screen of its own
-const SLIDERS = [
-  ["hue_low", "Hue low", 0, 179], ["hue_high", "Hue high", 0, 179], ["sat_low", "Saturation low", 0, 255],
-  ["val_low", "Brightness low", 0, 255], ["white_level", "White (pips)", 0, 255],
-  ["min_die_area", "Smallest die", 50, 20000], ["two_dice_area", "Two dice touching", 500, 40000],
-  ["exposure", "Exposure", -13, 0], ["focus", "Focus", 0, 255, true], ["gain", "Gain", 0, 255, true],
-];
-let tuneStart = null, tuneTimer = null;
-
-async function openTuning() {
-  let values;
-  try { values = await api("/api/camera/settings"); } catch (error) { status(error.message, true); return; }
-  tuneStart = values;
-  const box = clear($("sliders"));
-  for (let [key, label, low, high, optional] of SLIDERS) {
-    if (key === "exposure" && values.linux) {
-      key = "exposure_linux"; label = "Exposure (0.1 ms)"; low = 1; high = 2500;
+    let stream;
+    try {
+      stream = await ask(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } });
+    } catch (error) {
+      // the saved camera is gone (unplugged): take any. A busy or blocked one is said so instead
+      if (!deviceId || !["NotFoundError", "OverconstrainedError"].includes(error.name)) throw error;
+      stream = await ask({ facingMode: { ideal: "environment" } });
     }
-    const value = key === "exposure_linux" ? values.effective_exposure : values[key];
-    item(box, "label", label).htmlFor = `tune-${key}`;
-    const range = item(box, "input");
-    Object.assign(range, { type: "range", id: `tune-${key}`, min: low, max: high, step: 1, value: value ?? low });
-    range.dataset.key = key;
-    const out = item(box, "output", value ?? "auto");
-    range.addEventListener("input", () => {
-      out.textContent = range.value;
-      if (optional) $(`auto-${key}`).checked = false;
-      sendTuning();
+    cam.stream = stream;
+    const track = stream.getVideoTracks()[0];
+    const id = track.getSettings().deviceId || deviceId;
+    if (id) cameraKeep("cameraDevice", id);
+    cam.turn = cameraTurnOf(id);
+    track.addEventListener("ended", () => {   // unplugged, or taken back by the browser
+      if (cam.stream !== stream) return;
+      stopCamera(false);
+      cam.error = "The camera stopped (unplugged?).";
+      drawCamera();
     });
-    if (optional) {
-      item(box, "span");
-      const auto = item(item(box, "span", undefined, "auto"), "label", undefined, "toggle");
-      const check = item(auto, "input");
-      Object.assign(check, { type: "checkbox", id: `auto-${key}`, checked: value == null });
-      auto.append(" Let the camera choose");
-      check.addEventListener("change", () => { out.textContent = check.checked ? "auto" : range.value; sendTuning(); });
+    $("camera-video").srcObject = stream;
+    $("camera-video").play().catch(() => {});
+    status("Camera on.");
+  } catch (error) {
+    cam.error = cameraProblem(error);
+    status(cam.error, true);
+  }
+  cam.starting = false;
+  drawCamera();
+  listCameras();
+}
+
+function stopCamera(draw = true) {
+  if (cam.stream) for (const track of cam.stream.getTracks()) track.stop();
+  cam.stream = null;
+  $("camera-video").srcObject = null;
+  if (draw) drawCamera();
+}
+
+function toggleCamera() {
+  sound.unlock();
+  if (cam.stream) {
+    stopCamera();
+    status("Camera off.");
+  } else {
+    startCamera();
+  }
+}
+
+function turnCamera() {
+  cam.turn = (cam.turn + 90) % 360;
+  const id = cam.stream?.getVideoTracks()[0]?.getSettings().deviceId;
+  if (id) cameraKeep("cameraTurns", { ...cameraSaved("cameraTurns", {}), [id]: cam.turn });
+  drawPicture();
+}
+
+// The picture: each new frame drawn onto the canvas, turned, while the panel is open and the page is in view.
+// One loop per stream: a stopped stream sends no more frames, so its loop just never comes back.
+let pictureLoop = { id: 0, stream: null, running: false };
+function drawPicture() {
+  if (pictureLoop.running && pictureLoop.stream === cam.stream) return;
+  const video = $("camera-video"), canvas = $("camera-preview");
+  const loop = pictureLoop = { id: pictureLoop.id + 1, stream: cam.stream, running: true };
+  const frame = () => {
+    if (pictureLoop !== loop) return;
+    if (!cam.stream || cam.stream !== loop.stream || canvas.hidden || $("camera-pop").hidden || document.hidden) {
+      loop.running = false;
+      return;
     }
-  }
-  $("tune-status").textContent = "";
-  $("tune-dialog").showModal();
-  previewLoop();
-}
-
-function tuningValues() {
-  const values = {};
-  for (const range of $("sliders").querySelectorAll("input[type=range]")) {
-    const auto = $(`auto-${range.dataset.key}`);
-    values[range.dataset.key] = auto?.checked ? null : Number(range.value);
-  }
-  return values;
-}
-
-function sendTuning(save = false) {
-  clearTimeout(tuneTimer);
-  const view = document.querySelector("input[name=tune-view]:checked").value;
-  const go = () => api("/api/camera/settings", { values: tuningValues(), view, save })
-    .then(() => { if (save) status("Camera settings saved."); })
-    .catch((error) => { $("tune-status").textContent = error.message; });
-  if (save) return go();
-  tuneTimer = setTimeout(go, 150);
+    const w = video.videoWidth, h = video.videoHeight;
+    if (w && h) {
+      const side = cam.turn % 180 !== 0;
+      const cw = side ? h : w, ch = side ? w : h;
+      if (canvas.width !== cw || canvas.height !== ch) Object.assign(canvas, { width: cw, height: ch });
+      const g = canvas.getContext("2d");
+      g.setTransform(1, 0, 0, 1, cw / 2, ch / 2);
+      g.rotate((cam.turn * Math.PI) / 180);
+      g.drawImage(video, -w / 2, -h / 2, w, h);
+    }
+    next();
+  };
+  const next = () => (video.requestVideoFrameCallback ? video.requestVideoFrameCallback(frame) : requestAnimationFrame(frame));
+  next();
 }
 
 // The picture's panel: hidden until asked for, and kept open or shut on this device
@@ -1404,43 +1397,16 @@ function dragPanel(panel, handle) {
 }
 
 function setupCamera() {
-  try { S.cameraPicture = localStorage.getItem("craps.cameraPicture") === "1"; } catch { S.cameraPicture = false; }
+  S.cameraPicture = cameraSaved("cameraPicture", 0) === 1;
   $("camera-button").addEventListener("click", toggleCamera);
+  $("camera-device").addEventListener("change", () => startCamera($("camera-device").value));
   $("camera-show").addEventListener("click", () => showPicture(!S.cameraPicture));
   $("camera-pop-close").addEventListener("click", () => showPicture(false));
+  $("camera-turn").addEventListener("click", turnCamera);
   dragPanel($("camera-pop"), $("camera-pop-head"));
-  $("camera-tune").addEventListener("click", openTuning);
-  $("tune-train").addEventListener("click", async () => {
-    const button = $("tune-train"), report = $("train-report");
-    button.disabled = true;
-    report.hidden = false;
-    report.textContent = "Learning from your saved dice pictures…";
-    try {
-      const result = await api("/api/camera/train", {});
-      report.textContent = result.report;
-      loadCamera();
-    } catch (error) {
-      report.textContent = error.message;
-    }
-    button.disabled = false;
-  });
-  for (const radio of document.querySelectorAll("input[name=tune-view]")) radio.addEventListener("change", () => sendTuning());
-  $("tune-dialog").addEventListener("close", async () => {
-    const choice = $("tune-dialog").returnValue;
-    if (choice === "save") {
-      await sendTuning(true);
-    } else if (tuneStart) {                // put back what it was
-      const values = {};
-      for (const range of $("sliders").querySelectorAll("input[type=range]")) {
-        const key = range.dataset.key;
-        values[key] = key === "exposure_linux" ? tuneStart.exposure_linux : tuneStart[key];
-      }
-      await api("/api/camera/settings", { values, view: "normal" }).catch(() => {});
-    }
-    await api("/api/camera/settings", { values: {}, view: "normal" }).catch(() => {});
-    document.querySelector("input[name=tune-view][value=normal]").checked = true;
-  });
-  document.addEventListener("visibilitychange", previewLoop);
+  document.addEventListener("visibilitychange", drawPicture);
+  window.addEventListener("pagehide", () => stopCamera(false));   // let the camera's light go out with the page
+  drawCamera();
 }
 
 // ---------------------------------------------------------------- go

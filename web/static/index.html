@@ -97,11 +97,12 @@
       </div>
       <label class="toggle"><input type="checkbox" id="back-wall" checked> Hit back wall</label>
       <button type="button" id="mix-button">Sound</button>
-      <div class="camera-bar" id="camera-bar" hidden>
+      <!-- the camera on this device (phone, tablet or the table's laptop), opened by the browser -->
+      <div class="camera-bar" id="camera-bar">
         <span class="small muted" id="camera-status">Camera off</span>
+        <select id="camera-device" aria-label="Which camera" hidden></select>
         <button type="button" class="gold" id="camera-button">Start camera</button>
         <button type="button" id="camera-show" aria-pressed="false" title="Show or hide what the camera sees">Picture</button>
-        <button type="button" id="camera-tune">Tune</button>
       </div>
     </section>
 
@@ -142,9 +143,14 @@
     <section class="camera-pop" id="camera-pop" aria-label="Camera picture" hidden>
       <div class="camera-pop-head" id="camera-pop-head">
         <h2>Camera</h2>
-        <button type="button" class="icon" id="camera-pop-close" aria-label="Hide the picture">&times;</button>
+        <span class="camera-pop-tools">
+          <button type="button" id="camera-turn" title="Turn the picture a quarter turn, for a camera on its side">Turn</button>
+          <button type="button" class="icon" id="camera-pop-close" aria-label="Hide the picture">&times;</button>
+        </span>
       </div>
-      <img id="camera-preview" alt="What the camera sees" hidden>
+      <!-- the video plays out of sight and is drawn, turned, onto the canvas -->
+      <video id="camera-video" autoplay muted playsinline></video>
+      <canvas id="camera-preview" aria-label="What the camera sees" hidden></canvas>
       <p class="small muted" id="camera-full-status"></p>
       <p class="small muted" id="camera-hint"></p>
     </section>
@@ -287,30 +293,6 @@
       <div class="dialog-actions">
         <button type="button" id="mix-test">Try it</button>
         <button value="close" class="gold">Done</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="tune-dialog" class="wide-dialog">
-    <form method="dialog" class="dialog-body">
-      <h2>Tune the camera</h2>
-      <p class="small muted">Changes show in the picture straight away. <b>Mask</b> shows the green the dice are found by:
-        each die should be one solid white square and nothing else white. Save keeps the settings for next time.</p>
-      <div class="row wrap">
-        <label class="toggle"><input type="radio" name="tune-view" value="normal" checked> Picture</label>
-        <label class="toggle"><input type="radio" name="tune-view" value="mask"> Mask</label>
-      </div>
-      <img id="tune-preview" alt="What the camera sees">
-      <div class="sliders" id="sliders"></div>
-      <p class="status" id="tune-status" role="status"></p>
-      <h3>The dice reader</h3>
-      <p class="small muted">When a die's pips don't form a clean layout, a model learned from your saved dice pictures
-        gets a say. Retrain it after you've thrown (and fixed) a lot more with the camera.</p>
-      <button type="button" id="tune-train">Retrain the dice reader</button>
-      <pre class="report" id="train-report" hidden></pre>
-      <div class="dialog-actions">
-        <button value="cancel" id="tune-cancel">Cancel</button>
-        <button value="save" class="gold" id="tune-save">Save</button>
       </div>
     </form>
   </dialog>
