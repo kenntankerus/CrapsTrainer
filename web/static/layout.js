@@ -121,9 +121,12 @@ function textLines(parent, x, y, label, attrs, lineHeight) {
   return t;
 }
 
-// Where a bet's chip sits in its box, clear of the printed label (and of the puck in the number boxes)
+// Where a bet's chip sits in its box, clear of the printed label (and of the puck in the number boxes).
+// The size and the corner come from the box's own shape (w, h), not the stretched one: a stretched hardway box
+// otherwise got a big chip in the middle of its label
 function chipSpot(name, key, [x0, y0, x1, y1]) {
-  const w = x1 - x0, h = y1 - y0;
+  const [b0, c0, b1, c1] = LAYOUTS[name].zones[key];
+  const w = b1 - b0, h = c1 - c0;
   let r = Math.min(15, h / 2 - 2), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, oddsDir = 1;
   if (key.startsWith("place_")) {
     if (name === "tall") r = 10;
