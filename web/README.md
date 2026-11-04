@@ -203,6 +203,10 @@ the button says what it sees and how many pictures a second get through.
   camera puts its automatic modes back.
 - The search area (`roi`) has to stop short of the laptop at the near end: its lit screen read as two dice,
   and changing all the time, it kept "throwing". Here it ends at 1530.
+- The picture shows what the reader sees: a box round each die it found (green with the number it read,
+  yellow "?" for one it can't read), and the search area (`roi`) as a dashed line with the rest shaded.
+  *Mask* (in the picture's panel) shows the newest picture as the reader's mask instead: white wherever it
+  could find a die, so anything white on an empty table (a lit screen, a patch of glare) is trouble.
 - With no picture for 10 seconds (the page closed, or the device asleep) the reader stops; a page that's
   still open starts it again with its next picture. Only one page reads at a time: starting the camera on
   another device moves the reading there.

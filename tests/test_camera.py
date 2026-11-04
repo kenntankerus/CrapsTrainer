@@ -259,14 +259,22 @@ def test_pictures_from_the_page(monkeypatch):
     try:
         before = len(db.all_rows("SELECT * FROM throws WHERE player_id = ?", pid))
         end = time.time() + 15
+        seen = set()
         while time.time() < end:
             _, frame = capture.read()
             jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
-            assert c.post("/api/camera/picture", content=jpeg, headers=page).status_code == 200
+            r = c.post("/api/camera/picture", content=jpeg, headers=page)
+            assert r.status_code == 200
+            # each answer says what the reader found, for the page to draw over its picture
+            seen.add(tuple(d["value"] for d in r.json()["dice"]))
             rows = db.all_rows("SELECT * FROM throws WHERE player_id = ? ORDER BY id", pid)[before:]
             if len(rows) >= 2:
                 break
         assert [(r["die1"], r["die2"], r["source"]) for r in rows[:2]] == [(3, 4, "camera"), (6, 6, "camera")]
+        assert (3, 4) in seen and r.json()["roi"] is None
+        # the reader's mask of the newest picture: white where a die could be
+        mask = cv2.imdecode(np.frombuffer(c.get("/api/camera/mask.jpg").content, np.uint8), cv2.IMREAD_GRAYSCALE)
+        assert mask.shape == (270, 480) and mask.max() > 200
         # the page goes quiet (closed): the reader stops by itself
         wait_for(lambda: not camera.service.status({"email": EMAIL, "id": 0})["running"], 5)
         assert "stopped coming" in camera.service.error

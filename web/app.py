@@ -650,6 +650,15 @@ def camera_preview(user=Depends(camera_user)):
     return RawResponse(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/camera/mask.jpg")
+async def camera_mask(user=Depends(camera_user)):
+    """What the reader takes for dice in the newest picture (white), for tuning."""
+    jpeg = await run_in_threadpool(camera.service.mask)
+    if jpeg is None:
+        raise HTTPException(404, "No picture yet.")
+    return RawResponse(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/camera/settings")
 def camera_settings(user=Depends(camera_user)):
     return camera.service.settings()

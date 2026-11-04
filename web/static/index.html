@@ -144,6 +144,8 @@
       <div class="camera-pop-head" id="camera-pop-head">
         <h2>Camera</h2>
         <span class="camera-pop-tools">
+          <button type="button" id="camera-mask-button" aria-pressed="false" hidden
+                  title="Show what the dice reader takes for dice: white could be a die">Mask</button>
           <button type="button" id="camera-turn" title="Turn the picture a quarter turn, for a camera on its side">Turn</button>
           <button type="button" class="icon" id="camera-pop-close" aria-label="Hide the picture">&times;</button>
         </span>
@@ -151,6 +153,8 @@
       <!-- the video plays out of sight and is drawn, turned, onto the canvas -->
       <video id="camera-video" autoplay muted playsinline></video>
       <canvas id="camera-preview" aria-label="What the camera sees" hidden></canvas>
+      <!-- the reader's mask of the newest picture, from the server, in place of the picture when Mask is on -->
+      <img id="camera-mask" alt="What the dice reader takes for dice" hidden>
       <p class="small muted" id="camera-full-status"></p>
       <p class="small muted" id="camera-hint"></p>
     </section>

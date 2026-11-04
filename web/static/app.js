@@ -1274,13 +1274,19 @@ function drawCamera() {
   $("camera-hint").textContent = !cam.stream ? "" : reader.on
     ? `Throws go to ${$("player").selectedOptions[0]?.textContent || "this player"} on the ` +
       `${S.tab === "tracker" ? "tracker (no bets)" : "table"}. Turn the picture so the back wall is at the top. ` +
+      "Green boxes are dice it read, yellow ones it can't; it only looks inside the dashed line. " +
       `Wrong read? Tap the right dice (left die first), then Fix last.${model ? `  (${model})` : ""}`
     : "The camera shows the table but doesn't read the dice here: tap them in (left die first), then Roll.";
   $("camera-show").setAttribute("aria-pressed", String(S.cameraPicture));
   $("camera-pop").hidden = !S.cameraPicture;
-  $("camera-preview").hidden = !cam.stream;
+  $("camera-preview").hidden = !cam.stream || (reader.on && S.cameraMask);
+  $("camera-mask").hidden = !reader.on || !S.cameraMask;
+  $("camera-mask-button").hidden = !S.me?.camera?.allowed;
+  $("camera-mask-button").disabled = !reader.on;
+  $("camera-mask-button").setAttribute("aria-pressed", String(S.cameraMask));
   $("camera-turn").disabled = !cam.stream;
   drawPicture();
+  drawMask();
 }
 
 // The cameras the browser lists. Their names only show once the camera has been allowed, so the list is filled
@@ -1404,6 +1410,60 @@ function drawTurned(video, canvas) {
   return true;
 }
 
+// What the reader found, over the picture: a box round each die it found (green with the number read, yellow
+// with "?" for one it can't read), and the area it looks in, the rest shaded. Its answers come a picture behind
+// and in that picture's pixels, so they're only drawn when the sizes agree (not just after a Turn).
+function drawSeen(canvas) {
+  const [w, h] = reader.size || [];
+  if (!reader.on || w !== canvas.width || h !== canvas.height) return;
+  const g = canvas.getContext("2d");
+  const line = Math.max(2, Math.round(w / 250)), pad = line * 2;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (reader.roi) {
+    const [x0, y0, x1, y1] = reader.roi;
+    g.fillStyle = "rgba(0, 0, 0, 0.45)";
+    g.fillRect(0, 0, w, y0);
+    g.fillRect(0, y1, w, h - y1);
+    g.fillRect(0, y0, x0, y1 - y0);
+    g.fillRect(x1, y0, w - x1, y1 - y0);
+    g.setLineDash([line * 4, line * 3]);
+    g.strokeStyle = "rgba(120, 220, 255, 0.9)";
+    g.lineWidth = line;
+    g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    g.setLineDash([]);
+  }
+  g.font = `bold ${Math.max(16, Math.round(w / 20))}px system-ui, sans-serif`;
+  g.lineWidth = line;
+  for (const die of reader.dice) {
+    const [x, y, bw, bh] = die.box, read = die.value != null;
+    g.strokeStyle = g.fillStyle = read ? "#3ddc84" : "#ffc107";
+    g.strokeRect(x - pad, y - pad, bw + 2 * pad, bh + 2 * pad);
+    g.fillText(read ? String(die.value) : "?", x - pad, Math.max(y - pad - line * 2, line * 10));
+  }
+}
+
+// The reader's mask, in place of the picture while Mask is on: fetched from the server, the next once the last
+// has come, a few times a second while it's in view
+let maskLoop = false;
+function drawMask() {
+  if (maskLoop) return;
+  const img = $("camera-mask");
+  const go = () => {
+    if (img.hidden || $("camera-pop").hidden || document.hidden || !reader.on) { maskLoop = false; return; }
+    const next = new Image();
+    next.onload = () => { img.src = next.src; setTimeout(go, 300); };
+    next.onerror = () => setTimeout(go, 1000);
+    next.src = `/api/camera/mask.jpg?t=${Date.now()}`;
+  };
+  maskLoop = true;
+  go();
+}
+
+function showMask(on) {
+  S.cameraMask = on;
+  drawCamera();
+}
+
 // The picture: each new frame drawn onto the canvas, turned, while the panel is open and the page is in view.
 // One loop per stream: a stopped stream sends no more frames, so its loop just never comes back.
 let pictureLoop = { id: 0, stream: null, running: false };
@@ -1417,7 +1477,7 @@ function drawPicture() {
       loop.running = false;
       return;
     }
-    drawTurned(video, canvas);
+    if (drawTurned(video, canvas)) drawSeen(canvas);
     next();
   };
   const next = () => (video.requestVideoFrameCallback ? video.requestVideoFrameCallback(frame) : requestAnimationFrame(frame));
@@ -1431,7 +1491,8 @@ function drawPicture() {
 // news comes back on the live updates (camera_throw, camera_unclear). Full size, because a die is only about
 // 60 pixels across at 1920 and its pips need them all.
 const READ_FPS = 10, READ_QUALITY = 0.85;
-const reader = { on: false, busy: false, timer: 0, status: "", fps: null, canvas: null, restarts: 0, stopping: null };
+const reader = { on: false, busy: false, timer: 0, status: "", fps: null, canvas: null, restarts: 0, stopping: null,
+  dice: [], roi: null, size: null };
 
 function cameraBinding() {
   return { player_id: S.player, mode: S.tab === "tracker" ? "tracker" : "table", back_wall: $("back-wall").checked,
@@ -1478,7 +1539,7 @@ async function startReading() {
   await reader.stopping;                 // switching cameras: the old reader's stop must land before this start
   try {
     S.me.camera = await api("/api/camera/start", { ...cameraBinding(), from_page: true });
-    Object.assign(reader, { on: true, status: "", fps: null });
+    Object.assign(reader, { on: true, status: "", fps: null, dice: [], roi: null, size: null });
     status("Camera on and reading the dice. Throw when your bets are down.");
     sendPicture();
   } catch (error) {
@@ -1521,7 +1582,8 @@ async function sendPicture() {
         headers: { "X-Requested-With": "craps", "X-Client-Id": CLIENT, "Content-Type": "image/jpeg" } });
       const data = await response.json().catch(() => ({}));
       if (response.ok) {
-        Object.assign(reader, { status: data.status, fps: data.fps, restarts: 0 });
+        Object.assign(reader, { status: data.status, fps: data.fps, restarts: 0, dice: data.dice || [],
+          roi: data.roi, size: data.size });
       } else if (response.status === 410 && reader.restarts < 3) {
         // the reader stopped (it heard nothing for a while: the page was asleep, or the app restarted): start again
         reader.restarts += 1;
@@ -1569,13 +1631,15 @@ function dragPanel(panel, handle) {
 
 function setupCamera() {
   S.cameraPicture = cameraSaved("cameraPicture", 0) === 1;
+  S.cameraMask = false;
   $("camera-button").addEventListener("click", toggleCamera);
   $("camera-device").addEventListener("change", () => startCamera($("camera-device").value));
   $("camera-show").addEventListener("click", () => showPicture(!S.cameraPicture));
   $("camera-pop-close").addEventListener("click", () => showPicture(false));
   $("camera-turn").addEventListener("click", turnCamera);
+  $("camera-mask-button").addEventListener("click", () => showMask(!S.cameraMask));
   dragPanel($("camera-pop"), $("camera-pop-head"));
-  document.addEventListener("visibilitychange", drawPicture);
+  document.addEventListener("visibilitychange", () => { drawPicture(); drawMask(); });
   window.addEventListener("pagehide", () => stopCamera(false));   // let the camera's light go out with the page
   drawCamera();
 }
