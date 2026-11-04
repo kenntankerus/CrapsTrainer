@@ -273,3 +273,13 @@ def test_pictures_from_the_page(monkeypatch):
         assert c.post("/api/camera/picture", content=jpeg, headers=page).status_code == 410
     finally:
         camera.service.stop()
+
+
+def test_page_camera_controls_come_from_the_settings_file(tmp_path, monkeypatch):
+    # The page sets its camera's exposure and so on from "page_camera", read afresh so a change needs no restart
+    monkeypatch.setattr(config, "CAMERA_USERS", {EMAIL})
+    monkeypatch.setattr(camera, "SETTINGS_FILE", str(tmp_path / "dice_settings.json"))
+    c = signed_in_client(EMAIL)
+    assert c.get("/api/camera/settings").json()["page_camera"] == {}
+    (tmp_path / "dice_settings.json").write_text(json.dumps({"page_camera": {"exposureMode": "manual", "exposureTime": 625}}))
+    assert c.get("/api/camera/settings").json()["page_camera"] == {"exposureMode": "manual", "exposureTime": 625}

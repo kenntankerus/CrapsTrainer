@@ -65,6 +65,19 @@ def allowed(user):
     return dv is not None and user["email"] in config.CAMERA_USERS
 
 
+def page_camera():
+    """The camera controls the page sets on its own camera before sending pictures, from "page_camera" in
+    data/dice_settings.json, in the browser's names (exposureMode, exposureTime, focusMode, focusDistance, ...).
+    The reader was tuned on darker pictures than a webcam's automatic exposure gives over the dark felt: left
+    automatic, the dice burn out white. Read afresh each time, so a change there needs no restart."""
+    try:
+        with open(SETTINGS_FILE) as f:
+            values = json.load(f).get("page_camera", {})
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return values if isinstance(values, dict) else {}
+
+
 class PagePictures:
     """Stands in for a webcam when the pictures come from the page: read() hands over the newest one the page
     has sent (an older one not yet read is skipped, as a webcam's buffer of one does). When none comes for
@@ -291,6 +304,7 @@ class CameraService:
         values = dv.current_settings()
         values["linux"] = dv.LINUX
         values["effective_exposure"] = dv.linux_exposure() if dv.LINUX else dv.EXPOSURE
+        values["page_camera"] = page_camera()
         return values
 
     def tune(self, values, view=None, save=False):

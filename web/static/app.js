@@ -1236,7 +1236,7 @@ function connectLive() {
 // The browser opens the camera of whatever the page is on (a phone, a tablet, the table's laptop), so the server's
 // own webcam isn't needed. For the accounts that may use the dice reader the page also sends the picture to the
 // server, which reads the dice from it (see "reading the dice" below); for everyone else it only shows the table.
-const cam = { stream: null, error: "", starting: false, turn: 0, balance: "" };
+const cam = { stream: null, error: "", starting: false, turn: 0, controls: "", restore: {} };
 
 function cameraSaved(key, fallback) {
   try { return JSON.parse(localStorage.getItem(`craps.${key}`)) ?? fallback; } catch { return fallback; }
@@ -1260,7 +1260,7 @@ function drawCamera() {
   if (track) {
     const { width, height, frameRate } = track.getSettings();
     text = `${track.label || "Camera"}${width ? `: ${width}x${height}` : ""}${frameRate ? ` @ ${Math.round(frameRate)} fps` : ""}`;
-    full = text + (cam.balance ? `, ${cam.balance}` : "");
+    full = text + (cam.controls ? `, ${cam.controls}` : "");
     if (reader.on) {
       const reading = `Reading: ${reader.status || "starting"}${reader.fps ? ` (${reader.fps} pictures a second)` : ""}`;
       text = reading;
@@ -1317,7 +1317,7 @@ async function startCamera(deviceId = cameraSaved("cameraDevice", "")) {
   // picture as it gives, up to full HD
   const size = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
   const ask = (video) => navigator.mediaDevices.getUserMedia({ audio: false, video: { ...size, ...video } });
-  stopCamera(false);                       // many phones open only one camera at a time
+  stopCamera(false, false);                // many phones open only one camera at a time
   try {
     let stream;
     try {
@@ -1341,7 +1341,7 @@ async function startCamera(deviceId = cameraSaved("cameraDevice", "")) {
     $("camera-video").srcObject = stream;
     $("camera-video").play().catch(() => {});
     status("Camera on.");
-    cam.balance = await setWhiteBalance(track);
+    cam.controls = await setCameraControls(track);
     startReading();
   } catch (error) {
     cam.error = cameraProblem(error);
@@ -1352,11 +1352,23 @@ async function startCamera(deviceId = cameraSaved("cameraDevice", "")) {
   listCameras();
 }
 
-function stopCamera(draw = true) {
+// letGo: the camera is done with, so its automatic controls go back first. Restarting it (startCamera) keeps
+// what to put back for the next stop instead, since the restarted camera already has the page's settings.
+function stopCamera(draw = true, letGo = true) {
   stopReading();
-  if (cam.stream) for (const track of cam.stream.getTracks()) track.stop();
+  if (cam.stream) {
+    const restore = cam.restore;
+    for (const track of cam.stream.getTracks()) {
+      if (letGo && track.kind === "video" && Object.keys(restore).length) {
+        track.applyConstraints({ advanced: [restore] }).catch(() => {}).finally(() => track.stop());
+      } else {
+        track.stop();
+      }
+    }
+  }
   cam.stream = null;
-  cam.balance = "";
+  cam.controls = "";
+  if (letGo) cam.restore = {};
   $("camera-video").srcObject = null;
   if (draw) drawCamera();
 }
@@ -1426,22 +1438,39 @@ function cameraBinding() {
     dice_set: currentSet(), position: currentPosition(), tz_offset: -new Date().getTimezoneOffset() };
 }
 
-// Automatic white balance turns the dice yellow once the red felt fills the picture, so it's fixed at the reader's
-// setting where the browser can (Chrome and Edge can on many webcams; Firefox can't). Says what was done.
-async function setWhiteBalance(track) {
+// The reader was tuned on pictures with the camera's automatic controls off. Left automatic, the exposure brightens
+// the picture for the dark felt until the dice burn out white, and the white balance turns them yellow once the
+// felt fills the picture. So the page sets the camera's controls from the server's settings (page_camera, and
+// white_balance for the white balance) as far as the browser lets it: Chrome and Edge can on many webcams, Firefox
+// can't. Says what was set. The modes it found are kept, to be put back when the camera stops: a webcam keeps its
+// controls, and a video call later shouldn't get the dark, fixed picture.
+async function setCameraControls(track) {
   if (!S.me?.camera?.allowed || !track.getCapabilities) return "";
-  let want;
-  try { want = (await api("/api/camera/settings")).white_balance; } catch { return ""; }
-  if (!want) return "";
-  const can = track.getCapabilities();
-  if (!can.whiteBalanceMode?.includes("manual") || !can.colorTemperature) return "white balance automatic (this browser can't set it)";
-  const kelvin = Math.min(can.colorTemperature.max, Math.max(can.colorTemperature.min, want));
-  try {
-    await track.applyConstraints({ advanced: [{ whiteBalanceMode: "manual", colorTemperature: kelvin }] });
-    return `white balance ${kelvin} K`;
-  } catch {
-    return "white balance automatic (the camera refused)";
+  let tuned;
+  try { tuned = await api("/api/camera/settings"); } catch { return ""; }
+  const want = { ...(tuned.white_balance ? { whiteBalanceMode: "manual", colorTemperature: tuned.white_balance } : {}),
+    ...(tuned.page_camera || {}) };
+  const can = track.getCapabilities(), set = {};
+  for (const [key, value] of Object.entries(want)) {
+    const range = can[key];
+    if (Array.isArray(range)) { if (range.includes(value)) set[key] = value; }
+    else if (range && typeof value === "number") set[key] = Math.min(range.max, Math.max(range.min, value));
   }
+  if (!Object.keys(set).length) return Object.keys(want).length ? "exposure and white balance automatic (this browser can't set them)" : "";
+  const before = track.getSettings();
+  cam.restore = { ...Object.fromEntries(["exposureMode", "focusMode", "whiteBalanceMode"]
+    .filter((mode) => mode in set && before[mode] && before[mode] !== set[mode]).map((mode) => [mode, before[mode]])),
+    ...cam.restore };                     // a restarted camera's modes were already the page's: keep the first ones
+  try {
+    await track.applyConstraints({ advanced: [set] });
+  } catch {
+    return "exposure and white balance automatic (the camera refused them)";
+  }
+  const got = track.getSettings(), said = [];
+  if ("exposureMode" in want) said.push(got.exposureMode === "manual" ? `exposure ${got.exposureTime}` : "exposure automatic");
+  if ("colorTemperature" in want) said.push(got.whiteBalanceMode === "manual" ? `white balance ${got.colorTemperature} K` : "white balance automatic");
+  if ("focusMode" in want) said.push(got.focusMode === "manual" ? `focus ${got.focusDistance}` : "focus automatic");
+  return said.join(", ");
 }
 
 async function startReading() {
