@@ -89,6 +89,13 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   line, what got paid under them) and the bankroll tile; then the layout, which stretches to fill its tile (boxes
   grow, writing keeps its size; chips are placed by each box's own shape), with Rolls (270px) beside it; then a
   one-row chip tray across the full width. The camera picture floats in a panel dragged by its title.
+- **Tracker tab layout** (the owner's sketch): the whole window's width (the table keeps to 1500px). Left column: the
+  dice card beside Last throw, then Small / Tall / All beside Recent throws; right column: the Totals chart over
+  the Compared-by table. Under 1600px the columns stack (the pairs stay side by side), under 760px it's one column.
+  `setTab` moves the dice card between the table's row and the tracker (`#tracker-dice`).
+- Seeing a page without the server: on the dev laptop (WSL, no Linux browser libraries) run the app on a throwaway
+  data folder and screenshot it with the Windows Chrome (`chrome.exe --headless --screenshot --timeout=8000`,
+  its own `--user-data-dir`). A server restarted on the same port isn't reached from Windows: use a new port.
 - **Room noise is off for now** (`ROOM_NOISE = false` in `app.js`, which also hides its switch and slider). The
   owner asked for it; crowd reactions still play.
 - Testing changes: `python -m web` from the server's checkout listens on `127.0.0.1:8001` and serves `web/static`
