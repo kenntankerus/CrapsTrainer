@@ -119,7 +119,8 @@
       </section>
       <!-- on the table tab only: the tracker has its own last throw -->
       <section class="card last-card" id="last-card" aria-label="Last roll">
-        <h2>Last roll</h2>
+        <!-- the shooter's rolls this hand, and the last hand's, as the tracker shows them -->
+        <h2>Last roll <span class="hand-count" id="hand-count"></span></h2>
         <div class="last" id="last-roll"></div>
         <ul class="lines" id="payouts"></ul>
         <!-- on the table these sit on the "Last roll" heading's line, so the dice card stops at the dice; on the

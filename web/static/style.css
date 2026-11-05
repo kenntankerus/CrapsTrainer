@@ -99,7 +99,11 @@ main, .gate { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
    The payouts never make the card taller (contain: size): they scroll instead */
 .last-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto 1fr;
   gap: 6px 18px; align-items: center; }
-.last-card > h2 { grid-column: 1; grid-row: 1; margin: 0; }
+.last-card > h2 { grid-column: 1; grid-row: 1; margin: 0; display: flex; align-items: baseline; gap: 18px; }
+/* RUN 7  LAST RUN 15 at the right of the heading, over the dice's words */
+.hand-count { margin-left: auto; display: flex; align-items: baseline; gap: 6px; color: var(--muted); }
+.hand-count b { font-size: 1.25rem; color: var(--gold); letter-spacing: 0; margin-right: 10px; }
+.hand-count b:last-child { margin-right: 0; }
 .last-card > .status { grid-column: 2; grid-row: 1; margin: 0; }
 .last-card > .entry-actions { grid-column: 3; grid-row: 1; margin: 0; flex-wrap: nowrap; }
 .last-card > .last { grid-column: 1; grid-row: 2; min-height: 0; align-self: start; }

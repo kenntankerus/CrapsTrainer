@@ -369,6 +369,7 @@ def view(user_id, player_id, buy_in=DEFAULT_BUY_IN):
         "player": {"id": row["id"], "name": row["name"], "is_self": bool(row["is_self"])},
         "bankroll": table.bankroll, "on_table": table.on_table, "up": table.up, "bought_in": table.bought_in,
         "point": table.point, "work_on_comeout": table.work_on_comeout, "shooter_rolls": table.shooter_rolls,
+        "last_run": table.last_run,
         "bonus_hits": sorted(table.bonus_hits), "small_done": table.small_done, "tall_done": table.tall_done,
         "bonus_open": not table.bonus_rolls, "bets": bets,
         "last_roll": json.loads(row["last_roll"]) if row["last_roll"] else None,
