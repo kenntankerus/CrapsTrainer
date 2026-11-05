@@ -500,7 +500,7 @@ def invite_guest(player_id: int, body: Invite, request: Request, user=Depends(si
         raise HTTPException(400, "That's your own seat.")
     if email == user["email"]:
         raise HTTPException(400, "That's your own address. Send it to the guest's email.")
-    token, _ = auth.new_link(email, client_ip(request), "claim", player_id)
+    token, _ = auth.new_link(email, client_ip(request), "claim", player_id, sent_by=user["id"])
     mail.claim_email(email, auth.link_url(token), user["name"] or user["email"], row["name"], config.LINK_MINUTES)
     return {"ok": True, "message": f"Sent {row['name']} a link at {email}. Their throws move over when they open it."}
 

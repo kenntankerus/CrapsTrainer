@@ -100,3 +100,6 @@ SESSION_DAYS = 90                  # how long a device stays signed in without b
 LINKS_PER_EMAIL = 3                # sign-in emails per address per LINK_MINUTES
 LINKS_PER_IP = 10                  # sign-in emails per visitor address per hour
 MAX_GUESTS = 20
+# Guest-history emails an account may send a day. They go to any address with the sender's chosen name in the
+# subject, so without a cap one account could spend the email service's daily allowance (and the sign-in links with it)
+INVITES_PER_DAY = 10

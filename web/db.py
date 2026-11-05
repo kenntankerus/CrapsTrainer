@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS links (
     code TEXT NOT NULL DEFAULT '',              -- what the asking device shows, to match on the link's page
     agent TEXT NOT NULL DEFAULT '',             -- the asking device's browser
     approved REAL,                              -- opened elsewhere and sent to the asking device
-    collected REAL                              -- the asking device picked its sign-in up
+    collected REAL,                             -- the asking device picked its sign-in up
+    sent_by INTEGER                             -- the account that sent a claim, for INVITES_PER_DAY
 );
 CREATE INDEX IF NOT EXISTS links_email ON links(email, created);
 CREATE INDEX IF NOT EXISTS links_ip ON links(ip, created);
@@ -133,7 +134,7 @@ def connect():
 
 # columns added after the first databases were made, with how to add them to an older one
 ADDED = {"links": [("wait_hash", "TEXT"), ("code", "TEXT NOT NULL DEFAULT ''"), ("agent", "TEXT NOT NULL DEFAULT ''"),
-                   ("approved", "REAL"), ("collected", "REAL")]}
+                   ("approved", "REAL"), ("collected", "REAL"), ("sent_by", "INTEGER")]}
 
 
 def init():

@@ -1,5 +1,12 @@
 # docker compose up -d --build     starts the web server and the Cloudflare Tunnel that puts it online.
 # Settings come from .env (copy .env.example). See web/README.md.
+# Docker keeps each container's output forever unless told otherwise: keep 3 files of 10 MB each
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   web:
     build: .
@@ -10,6 +17,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"      # only this machine can reach it directly; everyone else comes through the tunnel
     restart: unless-stopped
+    logging: *logs
 
   tunnel:
     image: cloudflare/cloudflared:latest
@@ -19,3 +27,4 @@ services:
     depends_on:
       - web
     restart: unless-stopped
+    logging: *logs
