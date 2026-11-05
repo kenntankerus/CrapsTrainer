@@ -33,6 +33,10 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   in Legacy BIOS mode, Secure Boot off; Dell's Auto OS Recovery is turned off) running the app with
   `docker compose` from `~/src/CrapsTrainer`, behind a Cloudflare Tunnel (route `craps.kbmoto.net` -> `http://web:8000`).
   `.env` there holds the Resend SMTP key, the Turnstile keys and the tunnel token. Sign-in emails work.
+- **The server is on the owner's Tailscale** as `kbmoto-server` (key expiry off, so it stays signed in), added
+  2026-11-05. `ssh kenn@kbmoto-server` works from the owner's machines on the tailnet (the dev laptop, and the work
+  laptop `kbspark`) wherever they are, the same as `kenn@192.168.1.185` on the home network. Tailscale SSH is off:
+  it's ordinary SSH, and each machine needs its key in the server's `~/.ssh/authorized_keys`.
 - The Tkinter apps were confirmed to still run on Windows after the shared-logic refactor, before the wipe.
 - The desktop history is imported into the owner's account: 424 throws, the craps game's saved table and 716 dice
   pictures. Tested on Android and on a PC.
@@ -139,8 +143,10 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
      script posting rolls, which would grow the database on the laptop.
    - The table laptop: logs in by itself, Terminal pinned, and `kenn` is in the `docker` group (as good as root,
      and `.env` holds the keys). Before guests are around, finish kiosk mode (item 3) and unpin Terminal.
-   - SSH: `PasswordAuthentication no` (it's not set, so passwords work); only reachable on the home network.
-     Check `sudo ufw status` while at it.
+   - SSH: `PasswordAuthentication no` for everyone (it's only set for `habackup`, so `kenn` can still log in with a
+     password). It's reachable on the home network and over Tailscale, not from the open internet. Put it in
+     `/etc/ssh/sshd_config.d/10-no-passwords.conf`: sshd takes the first value it reads, so the file has to sort
+     before `60-habackup.conf`. Check `sudo ufw status` while at it.
 
 1. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
