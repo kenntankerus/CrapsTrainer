@@ -693,6 +693,12 @@ function drawTable() {
     ? "Click a spot to bet the chosen chip. Right-click to take a bet down, or drag it to another spot (or onto the chips to take it down)."
     : "Tap a spot to bet the chosen chip. Press and hold a bet to take it down or move it.";
 
+  const count = clear($("hand-count"));
+  for (const [caption, value] of [["Run", t.shooter_rolls], ["Last run", t.last_run ?? "—"]]) {
+    item(count, "span", caption);
+    item(count, "b", String(value));
+  }
+
   // the dice, with the total and the state ("point is 6") stacked beside them, to keep the card short
   const last = clear($("last-roll"));
   const r = t.last_roll;

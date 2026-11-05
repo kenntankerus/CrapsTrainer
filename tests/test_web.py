@@ -139,6 +139,20 @@ def test_pass_line_and_undo():
     assert view["point"] == 6 and {b["spot"]: b["odds"] for b in view["bets"]}["pass"] == 2500
 
 
+def test_table_counts_the_hand():
+    c = signed_in_client("counter@example.com")
+    pid = me(c)["players"][0]["id"]
+    table = c.get(f"/api/players/{pid}/table").json()
+    assert table["shooter_rolls"] == 0 and table["last_run"] is None
+    for die1, die2 in ((4, 4), (2, 3), (3, 4)):          # point 8, a roll, seven out
+        c.post(f"/api/players/{pid}/roll", json={"die1": die1, "die2": die2})
+    table = c.get(f"/api/players/{pid}/table").json()
+    assert table["shooter_rolls"] == 0 and table["last_run"] == 3
+    c.post(f"/api/players/{pid}/roll", json={"die1": 5, "die2": 6})
+    table = c.get(f"/api/players/{pid}/table").json()
+    assert table["shooter_rolls"] == 1 and table["last_run"] == 3
+
+
 def test_virtual_roll_settles_bets_but_skips_the_stats():
     c = signed_in_client("virtual@example.com")
     pid = me(c)["players"][0]["id"]
