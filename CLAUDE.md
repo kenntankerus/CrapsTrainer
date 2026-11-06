@@ -37,6 +37,9 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   2026-11-05. `ssh kenn@kbmoto-server` works from the owner's machines on the tailnet (the dev laptop, and the work
   laptop `kbspark`) wherever they are, the same as `kenn@192.168.1.185` on the home network. Tailscale SSH is off:
   it's ordinary SSH, and each machine needs its key in the server's `~/.ssh/authorized_keys`.
+  Since 2026-11-06 it is also the tailnet's **subnet router for `192.168.1.0/24`** (IP forwarding on in
+  `/etc/sysctl.d/99-tailscale.conf`, route approved in the admin console), so the owner's phone reaches the home
+  Home Assistant (`http://192.168.1.173:8123`, plain HTTP) from away. Mind it when changing the server's firewall.
 - The Tkinter apps were confirmed to still run on Windows after the shared-logic refactor, before the wipe.
 - The desktop history is imported into the owner's account: 424 throws, the craps game's saved table and 716 dice
   pictures. Tested on Android and on a PC.
