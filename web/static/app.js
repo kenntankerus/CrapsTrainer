@@ -1952,7 +1952,9 @@ async function setCameraControls(track) {
 }
 
 async function startReading() {
-  if (!S.me?.camera?.allowed || !cam.stream || reader.on) return drawCamera();
+  // not while the setup window is open: a picture already on its way when it opened comes back "stopped" (410),
+  // and starting again then would read with the old settings while setup measures; closing it starts the reader
+  if (!S.me?.camera?.allowed || !cam.stream || reader.on || $("camera-setup").open) return drawCamera();
   await reader.stopping;                 // switching cameras: the old reader's stop must land before this start
   try {
     const label = cam.stream.getVideoTracks()[0]?.label || "";
