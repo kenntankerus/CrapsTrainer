@@ -455,3 +455,23 @@ def test_setup_takes_a_dark_table():
 
     with pytest.raises(camera_setup.SetupError, match="came out at"):
         camera_setup.empty_table(np.zeros((1080, 1920, 3), np.uint8), settings)
+
+
+def test_setup_reads_dice_on_a_very_dark_red_felt():
+    # Red felt so dark it has no blue or green at all (0, 0, 16). Evening the picture out mustn't scale blue and
+    # green down to match it (that turned green dice black), and the dice step must look for the felt as it comes
+    # out brightened, not as measured
+    from web import camera_profiles, camera_setup
+    settings = {**camera_profiles.defaults(), "roi": None}
+    table = _table(felt=(0, 0, 70), laptop=False)
+    empty = (table * 0.23).astype(np.uint8)
+    r = camera_setup.empty_table(empty, settings)
+    assert r["settings"]["felt_bgr"][:2] == [0.0, 0.0] and r["level"] < 20
+    gains = camera_setup.even_gains(empty, r["settings"]["felt_bgr"], 88)
+    assert gains[1] >= gains[2] * 0.99                       # green is brightened like red, not cut down
+    draft = {**settings, **r["settings"]}
+    dice = table.copy()
+    camera_demo.draw_die(dice, 3, 800, 450, 20)
+    camera_demo.draw_die(dice, 5, 1200, 600, 65)
+    r = camera_setup.two_dice((dice * 0.23).astype(np.uint8), draft, empty)
+    assert r["read"] and [d["value"] for d in r["dice"]] == [3, 5]

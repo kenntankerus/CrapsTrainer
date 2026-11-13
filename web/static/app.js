@@ -1735,7 +1735,8 @@ async function setupMeasure() {
       setup.draft.page_camera = exposure.page;
       setupSay("Finding the felt…");
       const picture = setupPicture();
-      const r = await api("/api/camera/setup/empty", { picture, settings: setup.draft });
+      const r = await api("/api/camera/setup/empty", { picture, settings: setup.draft,
+        capabilities: track.getCapabilities ? track.getCapabilities() : {} });
       Object.assign(setup.draft, r.settings);
       setup.empty = picture;
       setup.leftOut = r.left_out;
@@ -1744,7 +1745,10 @@ async function setupMeasure() {
       setupSay(exposure.said + "Found the felt. The dashed line is where it will look for dice" +
         (things ? `, moved in past ${things === 1 ? "something" : `${things} things`} on the table (orange) that ` +
           "would get in the way" : "") + ". Drag its edges to change it." +
-        (r.still.length ? " Something inside it still looks like a die: drag the line past it." : ""), r.still.length > 0);
+        (r.still.length ? " Something inside it still looks like a die: drag the line past it." : "") +
+        // too dark, the dice's own colours are lost under the light and they look like the walls' wood
+        (r.level < 40 ? ` The felt came out very dark (${Math.round(r.level)} of 255): more light on the table would ` +
+          "help the dice keep their colour." : ""), r.still.length > 0 || r.level < 40);
     } else if (setup.step === 2) {
       setupSay("Measuring the dice…");
       const r = await api("/api/camera/setup/dice", { picture: setupPicture(), empty: setup.empty, settings: setup.draft });

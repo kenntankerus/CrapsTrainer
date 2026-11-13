@@ -729,6 +729,7 @@ class SetupPicture(BaseModel):
     picture: str = Field(..., max_length=16_000_000)            # the page's picture, turned, as a JPEG data: URL
     empty: Optional[str] = Field(None, max_length=16_000_000)   # the empty table's, for the two-dice step
     settings: dict = {}                                         # the settings so far
+    capabilities: dict = {}                                     # the camera's controls, as the browser offers them
 
 
 @app.post("/api/camera/setup/{step}")
@@ -772,7 +773,7 @@ async def camera_setup_step(step: str, body: SetupPicture, user=Depends(camera_u
         raise HTTPException(400, str(error))
     try:
         with open(os.path.join(config.DATA_DIR, f"setup-{step}.json"), "w") as f:
-            json.dump({"sent": body.settings, "answer": answer}, f, default=str)
+            json.dump({"sent": body.settings, "capabilities": body.capabilities, "answer": answer}, f, default=str)
     except Exception:                                       # noqa: BLE001
         pass
     return answer

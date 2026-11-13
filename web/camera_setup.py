@@ -82,7 +82,12 @@ def even_gains(frame, felt_bgr, level, roi=None):
     if felt.mean() < 0.2:
         return None
     measured = np.median(small[felt], axis=0).astype(float)
-    return np.clip(felt_target(felt_bgr, level) / np.maximum(measured, 1.0), 0.33, 3.0)
+    gains = felt_target(felt_bgr, level) / np.maximum(measured, 1.0)
+    # A colour the felt hardly has (dark red felt: blue and green near 0) says nothing about how that colour is lit:
+    # scaled to match it, green dice turned black. Such a colour takes the felt's brightest colour's gain.
+    faint = measured < 12
+    gains[faint] = gains[int(np.argmax(measured))]
+    return np.clip(gains, 0.33, 3.0)
 
 
 def gain_table(gains):
@@ -307,12 +312,18 @@ def two_dice(frame, settings, empty=None):
     empty picture (if given) still shows no dice. Returns the settings found, what was read, and any warnings."""
     if settings.get("felt_hue") is None or not settings.get("felt_bgr"):
         raise SetupError("Measure the empty table first.")
-    # measured as the reader will see them, evened out to the felt (a camera the browser couldn't set)
+    # measured as the reader will see them, evened out to the felt (a camera the browser couldn't set). The felt
+    # is then looked for as it comes out evened: brightened, a dark felt no longer matches its measured colour.
+    raw = frame
     frame = even(frame, settings)
     if empty is not None:
         empty = even(empty, settings)
+    seen = settings["felt_bgr"]
+    if frame is not raw:
+        gains = even_gains(raw, settings["felt_bgr"], settings.get("felt_level") or 88, settings.get("roi"))
+        seen = [float(min(v * g, 255)) for v, g in zip(settings["felt_bgr"], gains)]
     with using(settings):
-        spots = _die_spots(frame, settings)
+        spots = _die_spots(frame, {**settings, "felt_bgr": seen})
     if len(spots) < 2:
         raise SetupError("Couldn't find two dice on the felt. Put them apart from each other and from the walls, "
                          "inside the dashed line.")
