@@ -440,3 +440,18 @@ def test_pictures_are_evened_out_to_the_measured_felt(monkeypatch):
     finally:
         camera.service.stop()
     c.post("/api/camera/profile/reset", json={"camera": "Phone"})
+
+
+def test_setup_takes_a_dark_table():
+    # A short exposure leaves red felt dark (in the 20s) while the dice still stand out: the felt is judged against
+    # the picture's own brightness, not a fixed level
+    from web import camera_profiles, camera_setup
+    settings = {**camera_profiles.defaults(), "roi": None}
+    rng = np.random.default_rng(1)
+    dark = lambda frame: np.clip(frame * 0.24 + rng.normal(0, 3, frame.shape), 0, 255).astype(np.uint8)
+    empty = cv2.GaussianBlur(dark(_table(laptop=False).astype(float)), (5, 5), 0)
+    r = camera_setup.empty_table(empty, settings)
+    assert not r["still"] and r["level"] < 30
+
+    with pytest.raises(camera_setup.SetupError, match="came out at"):
+        camera_setup.empty_table(np.zeros((1080, 1920, 3), np.uint8), settings)

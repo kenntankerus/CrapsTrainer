@@ -757,6 +757,15 @@ async def camera_setup_step(step: str, body: SetupPicture, user=Depends(camera_u
     try:
         return await run_in_threadpool(measure)
     except camera_setup.SetupError as error:
+        # kept (one per step, the latest), so a setup that fails at the table can be tried again on the server
+        log.warning("Camera setup (%s) for user %s: %s", step, user["id"], error)
+        try:
+            import base64
+            data = body.picture.split(",", 1)[-1]
+            with open(os.path.join(config.DATA_DIR, f"setup-failed-{step}.jpg"), "wb") as f:
+                f.write(base64.b64decode(data))
+        except Exception:                                   # noqa: BLE001 - only a help for later
+            pass
         raise HTTPException(400, str(error))
 
 

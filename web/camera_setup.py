@@ -139,10 +139,14 @@ def find_felt(frame):
     h, w = hsv.shape[:2]
     middle = small[h // 4: 3 * h // 4, w // 4: 3 * w // 4].reshape(-1, 3)
     middle_hsv = hsv[h // 4: 3 * h // 4, w // 4: 3 * w // 4].reshape(-1, 3)
-    coloured = (middle_hsv[:, 1] >= 40) & (middle_hsv[:, 2] >= 25)
+    # Coloured enough, and not black: "black" against the picture's own brightness, not a fixed level. A short
+    # exposure keeps a rolling die sharp but leaves red felt dark (in the 20s), where the dice still stand out well.
+    level = float(np.median(middle_hsv[:, 2]))
+    coloured = (middle_hsv[:, 1] >= 40) & (middle_hsv[:, 2] >= min(25.0, max(8.0, 0.5 * level)))
     if coloured.mean() < 0.3:
         raise SetupError("The middle of the picture doesn't look like felt: is the camera over the table, "
-                         "and the picture not too dark?")
+                         f"and the picture not too dark? (The middle came out at {level:.0f} of 255; "
+                         f"{100 * coloured.mean():.0f}% of it looked like felt, and 30% is needed.)")
     hues = middle_hsv[coloured, 0]
     counts = np.bincount(hues, minlength=180).astype(float)
     counts = np.convolve(np.concatenate([counts[-5:], counts, counts[:5]]), np.ones(11), "valid")   # round the circle
