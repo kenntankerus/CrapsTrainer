@@ -748,25 +748,34 @@ async def camera_setup_step(step: str, body: SetupPicture, user=Depends(camera_u
     except ValueError as error:
         raise HTTPException(400, str(error))
 
+    def keep(picture, name):
+        # the latest picture of each step is kept in data/, with what came of it, so a setup that goes wrong at the
+        # table can be tried again on the server
+        try:
+            import base64
+            with open(os.path.join(config.DATA_DIR, name), "wb") as f:
+                f.write(base64.b64decode(picture.split(",", 1)[-1]))
+        except Exception:                                   # noqa: BLE001 - only a help for later
+            pass
+
     def measure():
+        keep(body.picture, f"setup-{step}.jpg")
         frame = camera_setup.decode(body.picture)
         if step == "empty":
             return camera_setup.empty_table(frame, settings)
         empty = camera_setup.decode(body.empty) if body.empty else None
         return camera_setup.two_dice(frame, settings, empty)
     try:
-        return await run_in_threadpool(measure)
+        answer = await run_in_threadpool(measure)
     except camera_setup.SetupError as error:
-        # kept (one per step, the latest), so a setup that fails at the table can be tried again on the server
         log.warning("Camera setup (%s) for user %s: %s", step, user["id"], error)
-        try:
-            import base64
-            data = body.picture.split(",", 1)[-1]
-            with open(os.path.join(config.DATA_DIR, f"setup-failed-{step}.jpg"), "wb") as f:
-                f.write(base64.b64decode(data))
-        except Exception:                                   # noqa: BLE001 - only a help for later
-            pass
         raise HTTPException(400, str(error))
+    try:
+        with open(os.path.join(config.DATA_DIR, f"setup-{step}.json"), "w") as f:
+            json.dump({"sent": body.settings, "answer": answer}, f, default=str)
+    except Exception:                                       # noqa: BLE001
+        pass
+    return answer
 
 
 @app.get("/api/camera/settings")
