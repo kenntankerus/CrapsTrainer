@@ -23,11 +23,11 @@ NUMBERS = {
     "hue_low": (int, 0, 179), "hue_high": (int, 0, 179), "sat_low": (int, 0, 255), "val_low": (int, 0, 255),
     "white_level": (int, 0, 255), "min_die_area": (int, 50, 20000), "two_dice_area": (int, 500, 40000),
     "felt_hue": (int, 0, 179), "tilt": (float, 0, 0.2), "white_balance": (int, 2000, 7500),
-    "felt_level": (int, 20, 220),
+    "felt_level": (int, 20, 220), "felt_val_low": (int, 0, 255),
 }
 OFF_ALLOWED = {"felt_hue", "tilt", "white_balance", "roi", "nadir", "felt_bgr"}
 READER_KEYS = ["hue_low", "hue_high", "sat_low", "val_low", "white_level", "min_die_area", "two_dice_area",
-               "roi", "felt_hue", "nadir", "tilt", "use_model"]
+               "roi", "felt_hue", "nadir", "tilt", "use_model", "felt_val_low"]
 KEYS = READER_KEYS + ["page_camera", "white_balance", "felt_bgr", "felt_level"]
 # the camera controls a page may be told to set, in the browser's names
 PAGE_MODES = {"exposureMode", "focusMode", "whiteBalanceMode"}

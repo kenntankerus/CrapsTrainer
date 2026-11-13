@@ -244,6 +244,22 @@ def leave_out(frame, roi, settings, things=(), felt=None):
     return roi, left_out, still
 
 
+def felt_val_low(frame, roi, felt_bgr):
+    """How dark the felt may be and still count as felt for the reader's ringed-by-felt test (FELT_VAL_LOW): a
+    little under the darker felt in this picture, as the reader sees it. Lit from the rim, the felt fades towards
+    the near end (101 to 50 on the Brio's table), and a die there wasn't found when its ring of felt was too dark
+    to count. Well under the darker felt, not just under it: felt right at the limit breaks into die-sized patches
+    that the reader takes for dice (at 48 on that table it did; at 40 it didn't). Never above the reader's own 60,
+    so a well-lit table is checked as it always was."""
+    k = dv.scale_of(frame)
+    x0, y0, x1, y1 = (int(v * k) for v in roi)
+    hsv = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_BGR2HSV)
+    values = hsv[..., 2][felt_mask(hsv, felt_bgr) > 0]
+    if values.size == 0:
+        return 60
+    return int(np.clip(round(0.75 * np.percentile(values, 10)), 20, 60))
+
+
 def empty_table(frame, settings):
     """Measure the felt and set the search area from a picture of the empty table. Returns the settings found
     (felt_hue, felt_bgr, roi), the felt's brightness, and the spots left out of the search area."""
@@ -256,6 +272,7 @@ def empty_table(frame, settings):
     evened = even(frame, {**settings, **found, "roi": None})      # as the reader will see it
     roi, left_out, still = leave_out(evened, _to_reference(box, frame), {**settings, **found}, felt["things"], felt)
     found["roi"] = roi
+    found["felt_val_low"] = felt_val_low(evened, roi, felt["felt_bgr"])
     return {"settings": found, "level": felt["level"], "left_out": left_out, "still": still}
 
 

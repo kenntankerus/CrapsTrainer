@@ -475,3 +475,21 @@ def test_setup_reads_dice_on_a_very_dark_red_felt():
     camera_demo.draw_die(dice, 5, 1200, 600, 65)
     r = camera_setup.two_dice((dice * 0.23).astype(np.uint8), draft, empty)
     assert r["read"] and [d["value"] for d in r["dice"]] == [3, 5]
+
+
+def test_setup_sets_how_dark_the_felt_may_be():
+    # Lit from the rim, the felt fades towards the near end; the reader's ringed-by-felt test takes the limit from
+    # the darker felt, and a well-lit table keeps the reader's own 60
+    from web import camera_profiles, camera_setup
+    import dice_vision as dv
+    settings = {**camera_profiles.defaults(), "roi": None}
+    assert dv.FELT_VAL_LOW == 60
+    lit = camera_setup.empty_table(_table(laptop=False), settings)
+    assert lit["settings"]["felt_val_low"] == 60
+    fade = np.linspace(1.0, 0.45, 1080)[:, None, None]
+    faded = camera_setup.empty_table((_table(laptop=False) * fade).astype(np.uint8), settings)
+    assert 20 <= faded["settings"]["felt_val_low"] <= 50
+    assert camera_profiles.clean({"felt_val_low": 40}) == {"felt_val_low": 40}
+    with camera_setup.using({"felt_val_low": 40}):
+        assert dv.FELT_VAL_LOW == 40
+    assert dv.FELT_VAL_LOW == 60
