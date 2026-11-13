@@ -87,13 +87,29 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
   out the laptop and die-like spots, then two dice: colour, wrapping round red; size; pips; both must read), and
   evening out each picture to the measured felt (`Evener`) for cameras the browser can't set. The reader takes the
   settings of the camera reading (`dv.apply_settings`; one reader at a time); setup measures with `using()`. Tested
-  on drawn tables, tonight's real Brio pictures and a test video in headless Chrome; Set up not yet run on the Brio.
+  on drawn tables, real Brio pictures and a test video in headless Chrome. Run on the Brio 2026-11-13 (below).
   The 4 unclear pictures that night (something read as a die at the back wall, all within a minute) were likely
   the cat on the box: nothing to tune unless it comes back.
   The Brio's controls can be read and tried from this laptop: headless Windows Chrome (`--remote-debugging-port`,
   `--use-fake-ui-for-media-stream`) on https://craps.kbmoto.net, `getCapabilities` / `applyConstraints`.
-  The Brio now hangs off the owner's Windows laptop, not the server, so the server's `.env` must not hand the
-  container a camera device (`COMPOSE_FILE` with `docker-compose.camera.yml`) or the container won't start.
+  The server's `.env` must not hand the container a camera device (`COMPOSE_FILE` with
+  `docker-compose.camera.yml`): the camera belongs to the page, and a missing device stops the container starting.
+- **The Brio set up on the table laptop (2026-11-13, PRs #27-#30).** The Brio is plugged into the server laptop
+  and read through the kiosk Brave page (restarting Brave stops the camera: tap *Start camera*). Brave offers it
+  only `exposureTime` (3-2047) and `brightness`, no `exposureCompensation`, so setup can't set a gain: it settled
+  on exposureTime 978 (setup searches only up to 1000; dice moving through ~1/10 s blur, but reads wait for still
+  dice). Under the room lamp alone the felt came out at 16 of 255: an LED strip round the rim now lights it, 101 at
+  the far end fading to 50 at the near end. Setup now: judges "too dark" against the picture's own felt; evens
+  out a colour the felt hardly has (dark red felt has no blue or green) by the brightest colour's gain; looks for
+  the felt in the evened picture as it comes out evened; and measures `felt_val_low` (dice_vision `FELT_VAL_LOW`,
+  how dark felt may be for the ringed-by-felt test that finds see-through dice) at 75% of the darker felt, 40
+  there, never above 60 (48 let dark felt patches count as dice). On 19 unread throws both dice were then found in
+  16, not 4. The setup's latest pictures and answers are kept in `data/setup-{empty,dice}.{jpg,json}` (with the
+  browser's camera controls), and the reader's unread throws in `data/unclear_frames/`. Under these LEDs the dice
+  measure hues 72-127, outside the model's, so setup turned `use_model` off: reads are by pips alone.
+  **Still wrong:** a 4 near the near end read as 2 (`unclear_frames/20261113-035532.png`: the pip at the die's
+  edge isn't found; growing the outline didn't help and broke another), and a 5 as 2 (`-035748`). The pip finder
+  for see-through dice is next.
 - `tests/test_camera.py::test_unclear_read_goes_with_typed_dice` fails outside UTC (the dev laptop); CI runs in UTC.
 - **The server's camera reader**, as tuned (the page's pictures use the same settings, but `rotate`): the Brio (by its `/dev/v4l/by-id` name in
   `CRAPS_CAMERA_DEVICE`), turned a quarter turn on its
@@ -142,7 +158,7 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
      leaving out `/api/camera/` (the page sends up to 10 pictures a second). Nothing else limits a signed-in
      script posting rolls, which would grow the database on the laptop.
    - The table laptop: logs in by itself, Terminal pinned, and `kenn` is in the `docker` group (as good as root,
-     and `.env` holds the keys). Before guests are around, finish kiosk mode (item 3) and unpin Terminal.
+     and `.env` holds the keys). Kiosk mode is back on (item 3); before guests are around, unpin Terminal.
    - SSH: `PasswordAuthentication no` for everyone (it's only set for `habackup`, so `kenn` can still log in with a
      password). It's reachable on the home network and over Tailscale, not from the open internet. Put it in
      `/etc/ssh/sshd_config.d/10-no-passwords.conf`: sshd takes the first value it reads, so the file has to sort
@@ -155,6 +171,9 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
    (`python -m web.make_sounds`, needs the ElevenLabs key), and add the backup crontab lines.
 3. **The server is the table's screen** (it's the touch-screen laptop at the table): `ubuntu-desktop-minimal`,
    automatic login, and `~/.config/autostart/craps-kiosk.desktop` runs `~/.local/bin/craps-kiosk` (screen blanking,
-   locking and sleep off, then Firefox on https://craps.kbmoto.net). **Kiosk mode is off for now**: Firefox opens as a
-   normal window, with Terminal pinned to the dock, so the browser and consoles stay in reach while things get
-   ironed out. When it's done, put `--kiosk` back on the `firefox` line in that script.
+   locking and sleep off, then Brave with `--kiosk` on https://craps.kbmoto.net; Firefox if Brave isn't there).
+   Brave because it lets the page set the camera's controls; its camera permission for the site comes from
+   `/etc/brave/policies/managed/craps-kiosk.json`. **Kiosk mode is on** (turned back on 2026-11-13). To get the
+   desktop back for a while, drop `--kiosk` from that script and log out and in, or use Ctrl+Alt+F3 for a console.
+   To start it again without logging out: close Brave, then `systemd-run --user --collect ~/.local/bin/craps-kiosk`
+   (a Brave opened by hand isn't in kiosk mode). Terminal is still pinned to the dock.
