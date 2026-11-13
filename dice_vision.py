@@ -104,7 +104,8 @@ _SAVED_NAMES = {"hue_low": "HUE_LOW", "hue_high": "HUE_HIGH", "sat_low": "SAT_LO
                 "white_level": "WHITE_LEVEL", "exposure": "EXPOSURE", "roi": "ROI", "focus": "FOCUS",
                 "two_dice_area": "TWO_DICE_AREA", "gain": "GAIN", "exposure_linux": "EXPOSURE_LINUX",
                 "rotate": "ROTATE", "white_balance": "WHITE_BALANCE", "felt_hue": "FELT_HUE",
-                "nadir": "NADIR", "tilt": "TILT", "use_model": "USE_MODEL"}
+                "nadir": "NADIR", "tilt": "TILT", "use_model": "USE_MODEL",
+                "felt_val_low": "FELT_VAL_LOW"}
 
 
 def load_settings(path=None):
