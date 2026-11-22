@@ -85,12 +85,23 @@ def engines(voice):
     return order
 
 
+def engine_tag(voice, engine, fast=False):
+    """An engine as it makes this voice: for ElevenLabs, which voice there and which model, so a new voice ID in
+    .env (a voice remade in ElevenLabs) counts as a change."""
+    if engine != "elevenlabs":
+        return engine
+    model = config.ELEVENLABS_FAST_MODEL if fast else config.ELEVENLABS_MODEL
+    made_by = f"{config.ELEVENLABS_VOICES.get(voice, '')}|{model}"
+    return "elevenlabs-" + hashlib.sha1(made_by.encode()).hexdigest()[:8]
+
+
 def edition(voice):
     """What makes this voice's lines right now (its recorded pack, then its best engine). It goes in each line's
-    address, so a browser that kept a line from an engine the voice has since moved on from fetches it again."""
+    address, so a browser that kept a line from an engine (or an ElevenLabs voice) the voice has since moved on
+    from fetches it again."""
     order = engines(voice)
     pack = "pack-" if os.path.isdir(os.path.join(config.VOICE_PACKS, pack_name(voice))) else ""
-    return pack + (order[0] if order else "browser")
+    return pack + (engine_tag(voice, order[0]) if order else "browser")
 
 
 def clip_url(voice, clip):
@@ -280,7 +291,8 @@ async def clip_path(slug, clip):
 # ---------------------------------------------------------------- personal calls
 def remember_line(voice, text, mood, engine):
     """Store a personal call and return the token its recording is fetched by."""
-    token = hashlib.sha1(f"{engine}|{voice}|{mood}|{text}".encode()).hexdigest()[:24]
+    made_by = engine_tag(voice, engine, fast=True)        # a new ElevenLabs voice ID gives the call a new address
+    token = hashlib.sha1(f"{made_by}|{voice}|{mood}|{text}".encode()).hexdigest()[:24]
     db.connect().execute("INSERT OR IGNORE INTO lines (token, voice, text, mood, engine, created) VALUES (?, ?, ?, ?, ?, ?)",
                          (token, voice, text, mood, engine, time.time()))
     return token

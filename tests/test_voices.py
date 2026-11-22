@@ -78,7 +78,13 @@ def test_clip_address_changes_with_the_engine(monkeypatch):
     monkeypatch.setattr(config, "ELEVENLABS_KEY", "key")
     monkeypatch.setattr(config, "ELEVENLABS_VOICES", {"Ava": "voice-id"})
     after = voice.clip_url("Ava", "out_0")
-    assert before == "/api/voice/Ava/out_0?by=edge" and after == "/api/voice/Ava/out_0?by=elevenlabs"
+    assert before == "/api/voice/Ava/out_0?by=edge" and after.startswith("/api/voice/Ava/out_0?by=elevenlabs-")
+    # the voice remade in ElevenLabs under a new ID: new addresses again, for the fixed lines and the personal calls
+    db.init()
+    call = voice.remember_line("Ava", "Pay the line, five dollars.", "cheer", "elevenlabs")
+    monkeypatch.setattr(config, "ELEVENLABS_VOICES", {"Ava": "new-voice-id"})
+    assert voice.clip_url("Ava", "out_0") != after
+    assert voice.remember_line("Ava", "Pay the line, five dollars.", "cheer", "elevenlabs") != call
 
 
 def test_stand_in_clip_is_not_the_best(monkeypatch, tmp_path):
