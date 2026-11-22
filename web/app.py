@@ -177,6 +177,18 @@ def changed(user, request, player_id=None, kind="changed"):
     events.publish(user["id"], kind, player_id=player_id, client=client_of(request))
 
 
+def table_changed(user, request, player_id):
+    """A change to a seat in the shared game touches every seat (the strip of bankrolls, a roll's payouts), so
+    every page showing any player hears about it."""
+    seated = player_id is not None and bool(db.one("SELECT seated FROM players WHERE id = ?", player_id)["seated"])
+    changed(user, request, None if seated else player_id)
+
+
+def with_notice(message, said):
+    """A roll's own message, then the dealer's word when the dice pass to the next shooter."""
+    return " ".join(m for m in (message, said.pop("notice", "")) if m)
+
+
 def check_cents(cents):
     if not isinstance(cents, int) or cents <= 0 or cents % 100 or cents > MAX_BUY_IN:
         raise HTTPException(400, "Buy-ins are whole dollars, up to $1,000,000.")
@@ -297,10 +309,11 @@ def sign_out(body: SignOut, request: Request, response: Response):
 
 # ---------------------------------------------------------------------- the account
 def players_of(user_id):
-    rows = db.all_rows("SELECT p.id, p.name, p.is_self, (SELECT COUNT(*) FROM throws t WHERE t.player_id = p.id "
-                       f"AND t.{tables.REAL}) AS n "
+    rows = db.all_rows("SELECT p.id, p.name, p.is_self, p.seated, p.shooting, (SELECT COUNT(*) FROM throws t "
+                       f"WHERE t.player_id = p.id AND t.{tables.REAL}) AS n "
                        "FROM players p WHERE p.owner_id = ? ORDER BY p.is_self DESC, p.id", user_id)
-    return [{"id": r["id"], "name": r["name"], "is_self": bool(r["is_self"]), "throws": r["n"]} for r in rows]
+    return [{"id": r["id"], "name": r["name"], "is_self": bool(r["is_self"]), "throws": r["n"],
+             "seated": bool(r["seated"]), "shooting": bool(r["shooting"])} for r in rows]
 
 
 @app.get("/api/me")
@@ -505,6 +518,25 @@ def invite_guest(player_id: int, body: Invite, request: Request, user=Depends(si
     return {"ok": True, "message": f"Sent {row['name']} a link at {email}. Their throws move over when they open it."}
 
 
+class Seat(BaseModel):
+    seated: bool
+
+
+@app.post("/api/players/{player_id}/seat")
+def seat_player(player_id: int, body: Seat, request: Request, user=Depends(signed_in)):
+    """Sit a player in on the shared game (betting on the shooter's rolls), or take them out of it."""
+    message = tables.seat(user["id"], player_id, body.seated, buy_in_of(user))
+    changed(user, request, kind="players")
+    return {"message": message}
+
+
+@app.post("/api/players/{player_id}/shoot")
+def give_dice(player_id: int, request: Request, user=Depends(signed_in)):
+    message = tables.give_dice(user["id"], player_id, buy_in_of(user))
+    changed(user, request, kind="players")
+    return {"message": message}
+
+
 # ---------------------------------------------------------------------- the craps table
 @app.get("/api/players/{player_id}/table")
 def table_view(player_id: int, user=Depends(signed_in)):
@@ -526,7 +558,7 @@ def change(player_id: int, body: Change, request: Request, user=Depends(signed_i
         check_cents(body.cents)
     message = tables.change(user["id"], player_id, body.action, buy_in_of(user), zone=body.zone, to=body.to,
                             hop=body.hop, cents=body.cents, on=body.on)
-    changed(user, request, player_id)
+    table_changed(user, request, player_id)
     return {"message": message, "table": tables.view(user["id"], player_id, buy_in_of(user))}
 
 
@@ -554,8 +586,8 @@ def roll(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
                                      premium=premium(user), personal=personal_of(user))
         message = ""
     camera.save_crops(throw_id, crops)
-    changed(user, request, player_id)
-    return {"message": message, **said}
+    table_changed(user, request, player_id)
+    return {"message": with_notice(message, said), **said}
 
 
 DICE = random.SystemRandom()
@@ -568,15 +600,16 @@ def virtual_roll(player_id: int, request: Request, user=Depends(signed_in)):
     die1, die2 = DICE.randint(1, 6), DICE.randint(1, 6)
     said, _ = tables.roll(user["id"], player_id, die1, die2, True, {"dice_set": "Virtual"}, voice_of(user),
                           buy_in_of(user), source=tables.VIRTUAL, premium=premium(user), personal=personal_of(user))
-    changed(user, request, player_id)
-    return {"message": f"Virtual roll: {die1}-{die2}. Not counted in your stats.", "dice": [die1, die2], **said}
+    table_changed(user, request, player_id)
+    message = with_notice(f"Virtual roll: {die1}-{die2}. Not counted in your stats.", said)
+    return {"message": message, "dice": [die1, die2], **said}
 
 
 @app.post("/api/players/{player_id}/fix")
 def fix(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
     message, said = tables.fix_last(user["id"], player_id, body.die1, body.die2, voice_of(user), premium(user),
                                     personal_of(user))
-    changed(user, request, player_id)
+    table_changed(user, request, player_id)
     return {"message": message, **said}
 
 
@@ -584,7 +617,7 @@ def fix(player_id: int, body: Dice, request: Request, user=Depends(signed_in)):
 def undo(player_id: int, request: Request, user=Depends(signed_in)):
     message, throw_id = tables.undo(user["id"], player_id)
     delete_crops(throw_id)
-    changed(user, request, player_id)
+    table_changed(user, request, player_id)
     return {"message": message}
 
 

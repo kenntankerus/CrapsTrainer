@@ -337,9 +337,11 @@ class CameraService:
             events.publish(user_id, "camera_error", message="The player the camera was throwing for is gone.")
             return
         save_crops(throw_id, crops)
+        notice = said.pop("notice", "")
         events.publish(user_id, "camera_throw", player_id=player_id, dice=[die1, die2], call=said["call"],
-                       reaction=said["reaction"], client=owner["client"],
-                       message=f"Camera read {die1}-{die2}. Wrong? Tap the right dice (left die first) and Fix last.")
+                       reaction=said["reaction"], client=owner["client"], shared=bool(said.get("shared")),
+                       message=f"Camera read {die1}-{die2}. Wrong? Tap the right dice (left die first) and Fix last."
+                               + (f" {notice}" if notice else ""))
 
     def _unclear(self, payload):
         owner = self.owner

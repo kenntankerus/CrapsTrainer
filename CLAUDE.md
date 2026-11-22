@@ -47,6 +47,12 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 - The table has a **Virtual roll** button: the server throws random dice that settle bets but are stored with
   source `virtual`, which the tracker, the stats, the throw counts and the export leave out.
 - When the camera starts, dice already on the table are taken as the starting picture, not a throw.
+- **Shared game** (branch `shared-game`): players ticked *In the game* (`players.seated`) all bet on one shooter
+  (`players.shooting`). A roll posted for any seat is the shooter's throw and settles every seat; the shooter's
+  table carries the point, the hand and Small/Tall/All (`GAME_FIELDS`), copied onto the others (`sync_game`). Each
+  other seat gets a `rider` row (left out by `REAL`, like `virtual`) linked by `throws.shot`, so Undo and Fix last
+  change everyone together (refused once someone has rolled since). Seven out passes the dice round the seats.
+  A player with a line bet on a different point of their own can't join until that hand is over.
 - **Dice sets.** A hold is "face up - face toward you" for each die, and every throw logs its hold:
   `Straight Sixes 6-5` (both dice alike), `3-V L3-5 R3-6`, `Hardway 3-2`, `Custom L5-1 R5-1`. The web app's hold
   picker lists the holds that are the chosen set (`SET_HOLDS` in `dice_stats.py`); Custom picks each die. The owner

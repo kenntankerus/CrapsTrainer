@@ -176,6 +176,12 @@
         </div>
         <aside class="table-side">
           <div class="card rolls-card">
+            <!-- the shared game, when players are in it: who has the dice and how each seat is doing. Tap a seat
+                 to bet as them; the dice button hands them the dice -->
+            <div class="seats" id="seats" hidden>
+              <h2>Game</h2>
+              <ul class="seat-list" id="seat-list"></ul>
+            </div>
             <h2>Rolls</h2>
             <ul class="lines" id="rolls"></ul>
             <p class="small muted" id="layout-help"></p>
@@ -318,6 +324,10 @@
 
       <h3>Players, voice and sound</h3>
       <p><b>Players…</b> in the name list adds guests, who play on your screen with their own bankroll and stats.
+        Tick <b>In the game</b> for everyone at the table and you all bet on one shooter: each roll settles every
+        player's bets, but counts in the shooter's stats alone. The dice pass round after a seven out (or hand them
+        over with <b>Give dice</b>), and Undo and Fix last change everyone's bets together. Pick your name in the
+        list, or tap it under <b>Game</b>, to place your own bets.
         <b>Stickman</b> picks who calls the rolls, and <b>Sound</b> sets the volumes.</p>
 
       <h3>From the menu</h3>
@@ -330,7 +340,7 @@
   <dialog id="players-dialog">
     <form method="dialog" class="dialog-body">
       <h2>Players at your table</h2>
-      <p class="small muted">Guests play on your screen with their own bankroll and stats. Send a guest their history and it moves to an account of their own.</p>
+      <p class="small muted">Guests play on your screen with their own bankroll and stats. Tick <b>In the game</b> for everyone betting on one shooter's rolls. Send a guest their history and it moves to an account of their own.</p>
       <ul class="players" id="players-list"></ul>
       <div class="row">
         <input id="guest-name" maxlength="30" placeholder="Guest's name" aria-label="Guest's name">
