@@ -85,6 +85,18 @@ def engines(voice):
     return order
 
 
+def edition(voice):
+    """What makes this voice's lines right now (its recorded pack, then its best engine). It goes in each line's
+    address, so a browser that kept a line from an engine the voice has since moved on from fetches it again."""
+    order = engines(voice)
+    pack = "pack-" if os.path.isdir(os.path.join(config.VOICE_PACKS, pack_name(voice))) else ""
+    return pack + (order[0] if order else "browser")
+
+
+def clip_url(voice, clip):
+    return f"/api/voice/{pack_name(voice)}/{clip}?by={edition(voice)}"
+
+
 def personal_engine(voice, premium):
     """The engine a personal call is made with, or None. It must be the voice's best one, so the call sounds like
     the rest of what the stickman says; ElevenLabs makes them only for the premium accounts."""
@@ -238,20 +250,22 @@ async def make(engine, text, mood, voice, fast=False):
 
 
 async def clip_path(slug, clip):
-    """The recording of one of a voice's fixed lines, made if need be. None when there isn't one and it can't be made."""
+    """The recording of one of a voice's fixed lines, made if need be: (path, whether the voice's best engine made
+    it). (None, False) when there isn't one and it can't be made."""
     voice = SLUGS.get(slug)
     line = find_line(voice, clip) if voice else None
     if line is None:
-        return None
+        return None, False
     recorded = os.path.join(config.VOICE_PACKS, slug, clip + ".mp3")
     if os.path.isfile(recorded):
-        return recorded
-    for engine in engines(voice):
+        return recorded, True
+    for i, engine in enumerate(engines(voice)):
         try:
-            return await make(engine, *line, voice)
+            return await make(engine, *line, voice), i == 0
         except Exception as error:
-            log.info("%s couldn't make %s/%s: %s", engine, slug, clip, error)
-    return None
+            # a warning, so a bad key or a spent quota shows in the log instead of quietly sounding wrong
+            log.warning("%s couldn't make %s/%s: %s", engine, slug, clip, error)
+    return None, False
 
 
 # ---------------------------------------------------------------- personal calls
@@ -270,7 +284,7 @@ async def line_path(slug, token):
     try:
         return await make(row["engine"], row["text"], row["mood"], row["voice"], fast=True)
     except Exception as error:
-        log.info("%s couldn't make a personal call: %s", row["engine"], error)
+        log.warning("%s couldn't make a personal call: %s", row["engine"], error)
         return None
 
 
@@ -282,6 +296,6 @@ async def prepare(voice):
     """Make every fixed line of a voice that isn't made yet (python -m web.get_voices --prepare runs this)."""
     made = 0
     for clip in clip_names(voice):
-        if await clip_path(pack_name(voice), clip):
+        if (await clip_path(pack_name(voice), clip))[0]:
             made += 1
     return made

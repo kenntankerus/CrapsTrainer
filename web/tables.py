@@ -168,9 +168,8 @@ def describe(result, throw):
 
 def call_pieces(pieces, voice):
     """The stickman's words for the browser: where to fetch each recording, and the text to speak without it."""
-    from .voice import spoken
-    slug = pack_name(voice)
-    return [{"clip": name, "url": f"/api/voice/{slug}/{name}", "text": text, "spoken": spoken(text, voice), "mood": mood}
+    from .voice import clip_url, spoken
+    return [{"clip": name, "url": clip_url(voice, name), "text": text, "spoken": spoken(text, voice), "mood": mood}
             for text, mood, name in pieces]
 
 
