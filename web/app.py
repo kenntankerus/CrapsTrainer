@@ -812,7 +812,7 @@ def voice_clips(slug: str, user=Depends(signed_in)):
     name = voice.SLUGS.get(slug)
     if name is None:
         raise HTTPException(404, "No such voice.")
-    return {"urls": [f"/api/voice/{slug}/{clip}" for clip in voice.clip_names(name)], "engines": voice.engines(name)}
+    return {"urls": [voice.clip_url(name, clip) for clip in voice.clip_names(name)], "engines": voice.engines(name)}
 
 
 @app.get("/api/voice/{slug}/line/{token}")
@@ -825,10 +825,12 @@ async def voice_line(slug: str, token: str, user=Depends(signed_in)):
 
 @app.get("/api/voice/{slug}/{clip}")
 async def voice_clip(slug: str, clip: str, user=Depends(signed_in)):
-    path = await voice.clip_path(slug, clip.removesuffix(".mp3"))
+    path, best = await voice.clip_path(slug, clip.removesuffix(".mp3"))
     if path is None:
         raise HTTPException(404, "No recording of that line.")
-    return FileResponse(path, media_type=voice.media_type(path), headers={"Cache-Control": "private, max-age=604800"})
+    # a stand-in (the best engine failed this time) isn't kept, so the right recording replaces it once it can be made
+    headers = {"Cache-Control": "private, max-age=604800"} if best else {"Cache-Control": "no-store", "X-Stand-In": "1"}
+    return FileResponse(path, media_type=voice.media_type(path), headers=headers)
 
 
 from .make_sounds import SOUNDS  # noqa: E402

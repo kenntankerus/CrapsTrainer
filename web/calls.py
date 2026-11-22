@@ -62,13 +62,29 @@ def clean_name(name):
     return re.sub(r"[^\w '\-]", "", name or "").strip()[:30]
 
 
+# How a character puts the personal calls: lost (a seven out's cost), big (a big win), pay (one bet), total (several)
+CALLS = {
+    "": {"lost": "That's {money} off the table{to_you}.", "big": "Big winner{to_you}! {Money} on the roll!",
+         "pay": "Pay {bet}, {money}.", "total": "{Money} on the roll{to_you}."},
+    "Precious": {"lost": "{Money}, gone, precious. All gone.", "big": "Shiny, shiny! {Money} for us, precious!",
+                 "pay": "Pay {bet}, precious. {Money}.", "total": "{Money} for us, precious!"},
+    "Master": {"lost": "{Money}, lost you have{to_you}. Hmm.", "big": "Rich, you become{to_you}! {Money}, won you have!",
+               "pay": "Pay {bet}, we will. {Money}, it pays.", "total": "{Money} on the roll, won you have{to_you}."},
+}
+
+
 def personal_call(result, name, voice=""):
     """(text, mood) for this roll, or None when there's nothing to add. result is CrapsTable.roll's."""
     if result is None:
         return None
     name = clean_name(name)
     to_you = f", {name}" if name else ""
-    precious = voice.startswith("Precious")
+    calls = CALLS.get(voice.split(" (")[0], CALLS[""])
+
+    def say(kind, cents, bet=""):
+        words = money_words(cents)
+        return calls[kind].format(money=words, Money=words[:1].upper() + words[1:], bet=bet, to_you=to_you)
+
     wins = [(spot, net) for spot, net, _ in result["events"] if net > 0]
     lost = -sum(net for _, net, _ in result["events"] if net < 0)
     total = sum(net for _, net in wins)
@@ -78,20 +94,16 @@ def personal_call(result, name, voice=""):
         return f"{name or 'Shooter'} makes 'em all! {money_words(won)} on the All!", "hype"
     if result["seven_out"]:
         if lost >= 2500:
-            return (f"That's {money_words(lost)} off the table{to_you}." if not precious else
-                    f"{money_words(lost).capitalize()}, gone, precious. All gone."), "down"
+            return say("lost", lost), "down"
         return None
     if not wins:
         return None
     if total >= BIG_WIN:
-        return (f"Big winner{to_you}! {money_words(total)} on the roll!" if not precious else
-                f"Shiny, shiny! {money_words(total)} for us, precious!"), "hype"
+        return say("big", total), "hype"
     if len(wins) == 1:
         spot, net = wins[0]
-        return (f"Pay {bet_words(spot)}, {money_words(net)}." if not precious else
-                f"Pay {bet_words(spot)}, precious. {money_words(net).capitalize()}."), "cheer"
-    return (f"{money_words(total).capitalize()} on the roll{to_you}." if not precious else
-            f"{money_words(total).capitalize()} for us, precious!"), "cheer"
+        return say("pay", net, bet_words(spot)), "cheer"
+    return say("total", total), "cheer"
 
 
 def reaction(keys, net=0):

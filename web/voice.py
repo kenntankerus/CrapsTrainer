@@ -37,7 +37,7 @@ _locks = {}
 # Each character in Kokoro: its voice, and how much higher (or lower) to pitch it
 KOKORO_VOICES = {"Andrew": ("am_michael", 1.0), "Brian": ("am_fenrir", 1.0), "Ava": ("af_heart", 1.0),
                  "Aria": ("af_bella", 1.0), "Shean (Connery-ish)": ("bm_george", 0.94),
-                 "Precious (Gollum-ish)": ("bm_lewis", 1.15)}
+                 "Precious (Gollum-ish)": ("bm_lewis", 1.15), "Master (Yoda-ish)": ("bm_fable", 1.1)}
 KOKORO_FILES = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 DIRECTED = ("eleven_v4", "eleven_v3")                         # ElevenLabs models that act out [stage directions]
 MOOD_DIRECTIONS = {"hype": "[excited]", "down": "[sighs]"}    # as make_voice_pack.py adds them
@@ -83,6 +83,18 @@ def engines(voice):
     if config.TTS:
         order.append("edge")
     return order
+
+
+def edition(voice):
+    """What makes this voice's lines right now (its recorded pack, then its best engine). It goes in each line's
+    address, so a browser that kept a line from an engine the voice has since moved on from fetches it again."""
+    order = engines(voice)
+    pack = "pack-" if os.path.isdir(os.path.join(config.VOICE_PACKS, pack_name(voice))) else ""
+    return pack + (order[0] if order else "browser")
+
+
+def clip_url(voice, clip):
+    return f"/api/voice/{pack_name(voice)}/{clip}?by={edition(voice)}"
 
 
 def personal_engine(voice, premium):
@@ -191,20 +203,29 @@ def spend(chars):
     return True
 
 
+_eleven_slots = threading.BoundedSemaphore(config.ELEVENLABS_AT_ONCE)
+BUSY_WAITS = (1, 3, 6)          # seconds before trying again when ElevenLabs says it's busy (429)
+
+
 def _eleven_make(path, words, voice_id, model):
-    if not spend(len(words)):
-        raise RuntimeError("ElevenLabs daily character limit reached")
     body = json.dumps({"text": words, "model_id": model,
                        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}).encode()
     request = urllib.request.Request(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128", data=body,
         headers={"xi-api-key": config.ELEVENLABS_KEY, "Content-Type": "application/json", "Accept": "audio/mpeg"})
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            audio = response.read()
-    except urllib.error.HTTPError as error:
-        spend(-len(words))
-        raise RuntimeError(f"ElevenLabs said {error.code}: {error.read()[:300]!r}")
+    for wait in (*BUSY_WAITS, None):
+        if not spend(len(words)):
+            raise RuntimeError("ElevenLabs daily character limit reached")
+        try:
+            with _eleven_slots, urllib.request.urlopen(request, timeout=30) as response:
+                audio = response.read()
+            break
+        except urllib.error.HTTPError as error:
+            spend(-len(words))
+            if error.code == 429 and wait is not None:
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"ElevenLabs said {error.code}: {error.read()[:300]!r}")
     part = path + ".part"
     with open(part, "wb") as f:
         f.write(audio)
@@ -238,20 +259,22 @@ async def make(engine, text, mood, voice, fast=False):
 
 
 async def clip_path(slug, clip):
-    """The recording of one of a voice's fixed lines, made if need be. None when there isn't one and it can't be made."""
+    """The recording of one of a voice's fixed lines, made if need be: (path, whether the voice's best engine made
+    it). (None, False) when there isn't one and it can't be made."""
     voice = SLUGS.get(slug)
     line = find_line(voice, clip) if voice else None
     if line is None:
-        return None
+        return None, False
     recorded = os.path.join(config.VOICE_PACKS, slug, clip + ".mp3")
     if os.path.isfile(recorded):
-        return recorded
-    for engine in engines(voice):
+        return recorded, True
+    for i, engine in enumerate(engines(voice)):
         try:
-            return await make(engine, *line, voice)
+            return await make(engine, *line, voice), i == 0
         except Exception as error:
-            log.info("%s couldn't make %s/%s: %s", engine, slug, clip, error)
-    return None
+            # a warning, so a bad key or a spent quota shows in the log instead of quietly sounding wrong
+            log.warning("%s couldn't make %s/%s: %s", engine, slug, clip, error)
+    return None, False
 
 
 # ---------------------------------------------------------------- personal calls
@@ -270,7 +293,7 @@ async def line_path(slug, token):
     try:
         return await make(row["engine"], row["text"], row["mood"], row["voice"], fast=True)
     except Exception as error:
-        log.info("%s couldn't make a personal call: %s", row["engine"], error)
+        log.warning("%s couldn't make a personal call: %s", row["engine"], error)
         return None
 
 
@@ -282,6 +305,6 @@ async def prepare(voice):
     """Make every fixed line of a voice that isn't made yet (python -m web.get_voices --prepare runs this)."""
     made = 0
     for clip in clip_names(voice):
-        if await clip_path(pack_name(voice), clip):
+        if (await clip_path(pack_name(voice), clip))[0]:
             made += 1
     return made

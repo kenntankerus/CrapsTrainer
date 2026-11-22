@@ -37,6 +37,17 @@ def test_personal_calls():
     assert calls.personal_call(roll_result([("field", -500, "loses")]), "Kenn") is None
     assert calls.personal_call(None, "Kenn") is None
     assert "precious" in calls.personal_call(roll_result([("yo", 7500, "wins")]), "Kenn", "Precious (Gollum-ish)")[0]
+    assert calls.personal_call(roll_result([("hard_8", 4500, "wins")]), "Kenn", "Master (Yoda-ish)") == \
+        ("Pay the hard eight, we will. Forty-five dollars, it pays.", "cheer")
+
+
+def test_master_has_every_line():
+    """The Yoda-ish stickman says every line in his own words, so none falls back to the plain stickman."""
+    from stickman import CHARACTER_LINES, LINES, voice_lines
+    master = CHARACTER_LINES["Master (Yoda-ish)"]
+    assert set(master) == set(LINES)
+    assert all(variants for variants, _ in master.values())
+    assert voice_lines("Master (Yoda-ish)")["out"][1] == "down"
 
 
 def test_crowd_reactions():
@@ -58,6 +69,59 @@ def test_engines_and_personal_engine(monkeypatch):
     assert voice.personal_engine("Ava", premium=True) == "elevenlabs"
     assert voice.personal_engine("Ava", premium=False) is None         # not a mismatched voice, and not on your bill
     assert voice.engines("Brian") == ["edge"]
+
+
+def test_clip_address_changes_with_the_engine(monkeypatch):
+    """A browser keeps a line for a week, so a voice moving to ElevenLabs must give its lines new addresses."""
+    monkeypatch.setattr(config, "TTS", True)
+    before = voice.clip_url("Ava", "out_0")
+    monkeypatch.setattr(config, "ELEVENLABS_KEY", "key")
+    monkeypatch.setattr(config, "ELEVENLABS_VOICES", {"Ava": "voice-id"})
+    after = voice.clip_url("Ava", "out_0")
+    assert before == "/api/voice/Ava/out_0?by=edge" and after == "/api/voice/Ava/out_0?by=elevenlabs"
+
+
+def test_stand_in_clip_is_not_the_best(monkeypatch, tmp_path):
+    """When ElevenLabs refuses a line the next engine stands in, and the page is told not to keep it."""
+    import asyncio
+    monkeypatch.setattr(config, "TTS", True)
+    monkeypatch.setattr(config, "VOICE_PACKS", str(tmp_path))
+    monkeypatch.setattr(config, "ELEVENLABS_KEY", "key")
+    monkeypatch.setattr(config, "ELEVENLABS_VOICES", {"Ava": "voice-id"})
+
+    async def make(engine, text, mood, name, fast=False):
+        if engine == "elevenlabs":
+            raise RuntimeError("ElevenLabs said 401")
+        return f"/cache/{engine}.mp3"
+    monkeypatch.setattr(voice, "make", make)
+    assert asyncio.run(voice.clip_path("Ava", "out_0")) == ("/cache/edge.mp3", False)
+
+
+def test_elevenlabs_busy_is_tried_again(monkeypatch, tmp_path):
+    """Past the plan's requests-at-once ElevenLabs answers 429: wait and try again rather than fall back."""
+    import io
+    import urllib.error
+    db.init()
+    monkeypatch.setattr(config, "ELEVENLABS_DAILY_CHARS", 0)
+    monkeypatch.setattr(voice, "BUSY_WAITS", (0, 0, 0))
+    tries = []
+
+    class Audio(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def urlopen(request, timeout):
+        tries.append(request)
+        if len(tries) < 3:
+            raise urllib.error.HTTPError(request.full_url, 429, "busy", {}, io.BytesIO(b"too_many_concurrent_requests"))
+        return Audio(b"ID3")
+    monkeypatch.setattr(voice.urllib.request, "urlopen", urlopen)
+    path = str(tmp_path / "line.mp3")
+    voice._eleven_make(path, "Hmm.", "voice-id", "eleven_v3")
+    assert len(tries) == 3 and open(path, "rb").read() == b"ID3"
 
 
 def test_daily_cap(monkeypatch):
@@ -103,6 +167,7 @@ def test_roll_gives_reaction_and_personal_line(monkeypatch):
 def test_voice_clip_list():
     c = signed_in_client(PERSONAL)
     urls = c.get("/api/voice/Precious_Gollum_ish/clips").json()["urls"]
-    assert "/api/voice/Precious_Gollum_ish/out_0" in urls and len(urls) == len(voice.clip_names("Precious (Gollum-ish)"))
+    assert any(u.startswith("/api/voice/Precious_Gollum_ish/out_0?by=") for u in urls)
+    assert len(urls) == len(voice.clip_names("Precious (Gollum-ish)"))
     assert c.get("/api/voice/Nobody/clips").status_code == 404
     assert c.get("/api/sounds").json() == {"sounds": []}

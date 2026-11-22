@@ -91,6 +91,9 @@ ELEVENLABS_VOICES = dict(
 ELEVENLABS_MODEL = _get("ELEVENLABS_MODEL", "eleven_v3")                 # the stickman's fixed lines
 ELEVENLABS_FAST_MODEL = _get("ELEVENLABS_FAST_MODEL", "eleven_flash_v2_5")   # personal calls, made while you wait
 ELEVENLABS_DAILY_CHARS = int(_get("ELEVENLABS_DAILY_CHARS", "20000") or 0)
+# How many lines are sent to ElevenLabs at once: each plan has a limit (Free 2, Starter 3), and a request past it
+# is refused, which left the free voice standing in for those lines
+ELEVENLABS_AT_ONCE = max(1, int(_get("ELEVENLABS_AT_ONCE", "2") or 2))
 # Kokoro, a free voice that runs on this computer, once its model files are in this folder (python -m web.get_voices)
 KOKORO_DIR = os.path.abspath(_get("KOKORO_DIR", os.path.join(DATA_DIR, "models", "kokoro")))
 SOUND_DIR = os.path.join(DATA_DIR, "sounds")     # recorded room and crowd sounds (python -m web.make_sounds)

@@ -110,6 +110,62 @@ def _build_creature_lines():
     return lines
 
 
+def _build_master_lines():
+    """The Yoda-ish stickman's own words: the verb goes last, and a "hmm" now and then. Written for a friend's
+    impression (cloned in ElevenLabs); any line missing here falls back to the normal one."""
+    lines = {
+        "no_roll": (["No roll. Touch the back wall, the dice must. Again, throw.",
+                     "Short, that throw was. No roll, it is."], "calm"),
+        "co_7": (["Seven! Winner, the front line is! Pay the line!",
+                  "A seven, it is! Win, the pass line does. Take the don'ts, we will."], "hype"),
+        "co_11": (["Yo, eleven! Lucky, you are! Pay the line!", "Eleven! Winner, the front line is. Yo!"], "hype"),
+        "co_2": (["Craps. Two little aces. Take the line, we must.", "Aces, two. Craps, this is. Hmm."], "down"),
+        "co_3": (["Three, ace-deuce. Craps, it is. Away, the line goes.",
+                  "Craps three. Take the line, we must. Hmm."], "down"),
+        "co_12": (["Twelve. Boxcars. Craps, it is. Hmm.", "Midnight, twelve is. Craps. Away, the line goes."], "down"),
+        "out": (["Seven out. Gone, your line is. Hmm. Sad, this is.",
+                 "Seven... out. Pay the don'ts, we must. Take the line, we will.",
+                 "Seven out, the shooter has. End, the hand does."], "down"),
+        "pt_2": (["Two, aces! Double, the field pays.", "Aces. Win, the field does. Double, hmm."], "calm"),
+        "pt_3": (["Three, ace-deuce. Win, the field does.", "Three craps, ace-deuce, this is."], "calm"),
+        "pt_11": (["Yo, eleven! Pay the yo, we will!", "Eleven! Lucky, the yo is."], "cheer"),
+        "pt_12": (["Twelve, boxcars! Triple, the field pays.", "Midnight! Twelve, it is. Win, the field does."], "calm"),
+        "num_5": (["Five. Just five, it is. No field five.", "Five, it is. Fever five, hmm."], "calm"),
+        "num_9": (["Nine. A field nine, this is.", "Nine, it is. Center field nine."], "calm"),
+        "bonus_Small": (["All the small numbers, made you have! Pay the Small!"], "hype"),
+        "bonus_Tall": (["All the tall numbers, made you have! Pay the Tall, we must!"], "hype"),
+        "bonus_All": (["Every number, rolled you have! Make 'em all! Strong with the dice, you are!"], "hype"),
+        "coming_out": (["Coming out, the dice are. Bets down, you must put.", "Coming out, we are. Throw, you will.",
+                        "Patience. Throw when ready, you are."], "cheer"),
+        "new_shooter": (["A new shooter, we have. Strong with the dice, this one is.",
+                         "Next shooter. Coming out, the dice are."], "calm"),
+        "good_roll": (["Good hand, that was. Proud, you should be.", "Long, this hand is. Hmm. Good, good."], "cheer"),
+    }
+    pairs = {4: "twos", 6: "threes", 8: "fours", 10: "fives"}
+    for n, pair in pairs.items():
+        w = WORDS[n]
+        lines[f"hard_{n}"] = ([f"{w.capitalize()}, the hard way! Two {pair}, together they came!",
+                               f"Hard {w}, it is! The hard way, it came."], "cheer")
+        lines[f"easy_{n}"] = ([f"{w.capitalize()}, easy {w}. Mark it, we will.", f"Easy {w}, this is."], "calm")
+    for n in POINT_NUMBERS:
+        w = WORDS[n]
+        lines[f"co_point_{n}"] = ([f"{w.capitalize()}, the point is. Remember it, we must.",
+                                   f"The point, {w} is. Mark the {w}!",
+                                   f"{w.capitalize()}! Shooter's point, {w} is. Hmm."], "cheer")
+        lines[f"made_{n}"] = ([f"Point made! {w.capitalize()}, a winner! Pay the line, pay it now!",
+                              f"{w.capitalize()}, the point is! Winner, the front line is!",
+                              f"Made the {w}, you have! Pay the line, we will!"], "hype")
+        if n % 2 == 0:
+            lines[f"made_hard_{n}"] = ([f"{w.capitalize()} the hard way, the point is! Pay the line, pay the hardway!"],
+                                       "hype")
+    for n, w in WORDS.items():
+        lines[f"b2b_{n}"] = ([f"{w.capitalize()} again! Back to back, it came!"], "cheer")
+    for k in HOT_ROLLS:
+        lines[f"hot_{k}"] = ([f"{k} rolls! Hot, this shooter is. Strong, the Force is!",
+                              f"{k} rolls, and counting! Stop, this shooter will not."], "hype")
+    return lines
+
+
 def shlur(text):
     """'Six, the hard way' -> 'Shix, the hard way'. Keeps 'sh' as it is and the capital letters."""
     return re.sub(r"[sS](?![hH])", lambda m: "Sh" if m.group() == "S" else "sh", text)
@@ -133,8 +189,9 @@ VOICES = {"Andrew": ("en-US-AndrewNeural", 0, 0, None),
           "Ava": ("en-US-AvaNeural", 0, 0, None),
           "Aria": ("en-US-AriaNeural", 0, 0, None),
           "Shean (Connery-ish)": ("en-GB-RyanNeural", -10, -14, shlur),
-          "Precious (Gollum-ish)": ("en-GB-ThomasNeural", 6, 22, hiss)}
-CHARACTER_LINES = {"Precious (Gollum-ish)": _build_creature_lines()}
+          "Precious (Gollum-ish)": ("en-GB-ThomasNeural", 6, 22, hiss),
+          "Master (Yoda-ish)": ("en-US-GuyNeural", -14, 18, None)}
+CHARACTER_LINES = {"Precious (Gollum-ish)": _build_creature_lines(), "Master (Yoda-ish)": _build_master_lines()}
 DEFAULT_VOICE = "Andrew"
 
 
