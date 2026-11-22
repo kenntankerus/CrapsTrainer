@@ -403,6 +403,20 @@ function currentPosition() {
   return $("position").value === OTHER ? $("position").dataset.last : $("position").value;
 }
 
+// Whose bets the layout shows and takes. In the shared game that's whoever is betting, not who has the dice:
+// rolls go to the shooter whichever seat is picked.
+async function selectPlayer(id) {
+  S.player = id;
+  $("player").value = String(id);
+  S.flash = {};
+  saveSettings({ player_id: S.player });
+  syncCamera();
+  const p = S.me.players.find((x) => x.id === id);
+  const name = p ? (p.is_self ? `${p.name} (you)` : p.name) : "";
+  status(p?.seated ? `Betting as ${name}.` : `${name} is throwing.`);
+  await refresh();
+}
+
 function voiceSlug() {
   const v = S.config.voices.find((x) => x.name === $("voice").value);
   return v ? v.slug : "";
@@ -415,13 +429,7 @@ function setupControls() {
       openPlayers();
       return;
     }
-    S.player = Number($("player").value);
-    S.flash = {};
-    saveSettings({ player_id: S.player });
-    syncCamera();
-    const name = $("player").selectedOptions[0].textContent;
-    status(`${name} is throwing.`);
-    await refresh();
+    await selectPlayer(Number($("player").value));
   });
   $("dice-set").addEventListener("change", async () => {
     await pickOther($("dice-set"), "New dice set", "dice_set");
@@ -734,7 +742,43 @@ function drawTable() {
     item(li, "span", roll.net ? signed(roll.net) : "", roll.net > 0 ? "win" : roll.net < 0 ? "loss" : "");
   }
   if (!t.rolls.length) item(rolls, "li", "Nothing rolled yet.");
+  drawSeats(t.game);
   if ($("stats-dialog").open) drawRunStats();
+}
+
+// The shared game's seats: a tap bets as that player, the dice button hands them the dice
+function drawSeats(game) {
+  $("seats").hidden = !game;
+  if (!game) return;
+  const list = clear($("seat-list"));
+  for (const seat of game.seats) {
+    const li = item(list, "li");
+    const pick = item(li, "button", undefined, "seat");
+    pick.type = "button";
+    pick.setAttribute("aria-current", String(seat.id === S.player));
+    pick.title = `Bet as ${seat.name}`;
+    item(pick, "span", seat.name, "name");
+    item(pick, "span", money(seat.bankroll + seat.on_table), "small muted");
+    if (seat.last_net) item(pick, "span", signed(seat.last_net), seat.last_net > 0 ? "win" : "loss");
+    pick.addEventListener("click", () => { if (seat.id !== S.player) selectPlayer(seat.id); });
+    const dice = item(li, "button", "🎲", "dice");
+    dice.type = "button";
+    dice.disabled = seat.shooting;
+    dice.title = seat.shooting ? `${seat.name} has the dice` : `Give ${seat.name} the dice`;
+    dice.setAttribute("aria-label", dice.title);
+    dice.addEventListener("click", () => giveDice(seat.id));
+  }
+}
+
+async function giveDice(id) {
+  try {
+    const r = await api(`/api/players/${id}/shoot`, {});
+    await reloadPlayers();
+    status(r.message);
+    await refresh();
+  } catch (error) {
+    status(error.message, true);
+  }
 }
 
 function drawRunStats() {
@@ -1147,7 +1191,31 @@ function drawPlayers() {
       const b = item(li, "button", label, cls);
       b.type = "button";
       b.addEventListener("click", run);
+      return b;
     };
+    // in the shared game: bets on the shooter's rolls
+    const inGame = item(li, "label", undefined, "in-game");
+    const box = item(inGame, "input");
+    box.type = "checkbox";
+    box.checked = p.seated;
+    item(inGame, "span", "In the game");
+    box.addEventListener("change", async () => {
+      try {
+        const r = await api(`/api/players/${p.id}/seat`, { seated: box.checked });
+        await reloadPlayers(r.message);
+        refresh();
+      } catch (error) {
+        box.checked = !box.checked;
+        $("players-status").textContent = error.message;
+      }
+    });
+    if (p.seated) {
+      const give = button(p.shooting ? "Has the dice" : "Give dice", async () => {
+        try { const r = await api(`/api/players/${p.id}/shoot`, {}); await reloadPlayers(r.message); refresh(); }
+        catch (error) { $("players-status").textContent = error.message; }
+      });
+      give.disabled = p.shooting;
+    }
     button("Rename", async () => {
       const name = await ask("Rename", "", { input: true, value: p.name });
       if (!name) return;
@@ -1176,6 +1244,7 @@ function openPlayers() {
   $("players-status").textContent = "";
   drawPlayers();
   $("players-dialog").showModal();
+  reloadPlayers().catch(() => {});        // who has the dice changes with every seven out
 }
 
 async function addGuest() {
@@ -1290,7 +1359,7 @@ function connectLive() {
     } else if (m.type === "players") {
       if (!mine) reloadPlayers().then(refresh).catch(() => {});
     } else if (m.type === "camera_throw") {
-      if (m.player_id === S.player) refresh(true);
+      if (m.player_id === S.player || m.shared) refresh(true);
       if (mine) {
         if ($("sounds").checked) sound.beep(true);
         speak(m);

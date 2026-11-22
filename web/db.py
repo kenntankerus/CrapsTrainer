@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS players (
     name TEXT NOT NULL,
     table_state TEXT,                           -- CrapsTable.to_dict() as JSON
     last_roll TEXT,                             -- what the "last roll" panel shows, as JSON
-    created TEXT NOT NULL
+    created TEXT NOT NULL,
+    seated INTEGER NOT NULL DEFAULT 0,          -- in the account's shared game: bets on the shooter's rolls
+    shooting INTEGER NOT NULL DEFAULT 0         -- has the dice in the shared game (one seat at a time)
 );
 CREATE INDEX IF NOT EXISTS players_owner ON players(owner_id);
 -- the same columns as dice_throws.csv, plus what the table needs to take a roll back
@@ -78,9 +80,11 @@ CREATE TABLE IF NOT EXISTS throws (
     table_before TEXT,                          -- the table just before a craps-game roll; NULL for tracker throws
     net INTEGER,                                -- what the roll won or lost, in cents
     note TEXT NOT NULL DEFAULT '',              -- "point is 6", "seven out after 9 rolls", ...
-    locked INTEGER NOT NULL DEFAULT 0           -- imported or claimed: kept, but Undo and Fix last pass it by
+    locked INTEGER NOT NULL DEFAULT 0,          -- imported or claimed: kept, but Undo and Fix last pass it by
+    shot TEXT                                   -- a shared game's roll: the shooter's throw_id, on every seat's row
 );
 CREATE INDEX IF NOT EXISTS throws_player ON throws(player_id, id);
+CREATE INDEX IF NOT EXISTS throws_shot ON throws(shot);
 -- the stickman's personal calls ("Pay the hard eight, forty-five dollars"), made when first played
 CREATE TABLE IF NOT EXISTS lines (
     token TEXT PRIMARY KEY,
@@ -134,7 +138,9 @@ def connect():
 
 # columns added after the first databases were made, with how to add them to an older one
 ADDED = {"links": [("wait_hash", "TEXT"), ("code", "TEXT NOT NULL DEFAULT ''"), ("agent", "TEXT NOT NULL DEFAULT ''"),
-                   ("approved", "REAL"), ("collected", "REAL"), ("sent_by", "INTEGER")]}
+                   ("approved", "REAL"), ("collected", "REAL"), ("sent_by", "INTEGER")],
+         "players": [("seated", "INTEGER NOT NULL DEFAULT 0"), ("shooting", "INTEGER NOT NULL DEFAULT 0")],
+         "throws": [("shot", "TEXT")]}
 
 
 def init():
