@@ -97,6 +97,33 @@ def test_stand_in_clip_is_not_the_best(monkeypatch, tmp_path):
     assert asyncio.run(voice.clip_path("Ava", "out_0")) == ("/cache/edge.mp3", False)
 
 
+def test_elevenlabs_busy_is_tried_again(monkeypatch, tmp_path):
+    """Past the plan's requests-at-once ElevenLabs answers 429: wait and try again rather than fall back."""
+    import io
+    import urllib.error
+    db.init()
+    monkeypatch.setattr(config, "ELEVENLABS_DAILY_CHARS", 0)
+    monkeypatch.setattr(voice, "BUSY_WAITS", (0, 0, 0))
+    tries = []
+
+    class Audio(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def urlopen(request, timeout):
+        tries.append(request)
+        if len(tries) < 3:
+            raise urllib.error.HTTPError(request.full_url, 429, "busy", {}, io.BytesIO(b"too_many_concurrent_requests"))
+        return Audio(b"ID3")
+    monkeypatch.setattr(voice.urllib.request, "urlopen", urlopen)
+    path = str(tmp_path / "line.mp3")
+    voice._eleven_make(path, "Hmm.", "voice-id", "eleven_v3")
+    assert len(tries) == 3 and open(path, "rb").read() == b"ID3"
+
+
 def test_daily_cap(monkeypatch):
     db.init()
     monkeypatch.setattr(config, "ELEVENLABS_DAILY_CHARS", 100)

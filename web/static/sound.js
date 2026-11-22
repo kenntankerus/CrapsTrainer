@@ -310,7 +310,8 @@ async function fetchClip(url) {
     return null;
   }
   const bytes = await response.arrayBuffer();
-  clips.set(url, bytes);
+  // a stand-in (the voice's own engine failed this time) is played but not kept, so the real line is fetched next time
+  if (!response.headers.get("X-Stand-In")) clips.set(url, bytes);
   return bytes;
 }
 

@@ -829,8 +829,8 @@ async def voice_clip(slug: str, clip: str, user=Depends(signed_in)):
     if path is None:
         raise HTTPException(404, "No recording of that line.")
     # a stand-in (the best engine failed this time) isn't kept, so the right recording replaces it once it can be made
-    cache = "private, max-age=604800" if best else "no-store"
-    return FileResponse(path, media_type=voice.media_type(path), headers={"Cache-Control": cache})
+    headers = {"Cache-Control": "private, max-age=604800"} if best else {"Cache-Control": "no-store", "X-Stand-In": "1"}
+    return FileResponse(path, media_type=voice.media_type(path), headers=headers)
 
 
 from .make_sounds import SOUNDS  # noqa: E402

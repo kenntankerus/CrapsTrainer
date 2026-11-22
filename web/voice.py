@@ -203,20 +203,29 @@ def spend(chars):
     return True
 
 
+_eleven_slots = threading.BoundedSemaphore(config.ELEVENLABS_AT_ONCE)
+BUSY_WAITS = (1, 3, 6)          # seconds before trying again when ElevenLabs says it's busy (429)
+
+
 def _eleven_make(path, words, voice_id, model):
-    if not spend(len(words)):
-        raise RuntimeError("ElevenLabs daily character limit reached")
     body = json.dumps({"text": words, "model_id": model,
                        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}).encode()
     request = urllib.request.Request(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128", data=body,
         headers={"xi-api-key": config.ELEVENLABS_KEY, "Content-Type": "application/json", "Accept": "audio/mpeg"})
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            audio = response.read()
-    except urllib.error.HTTPError as error:
-        spend(-len(words))
-        raise RuntimeError(f"ElevenLabs said {error.code}: {error.read()[:300]!r}")
+    for wait in (*BUSY_WAITS, None):
+        if not spend(len(words)):
+            raise RuntimeError("ElevenLabs daily character limit reached")
+        try:
+            with _eleven_slots, urllib.request.urlopen(request, timeout=30) as response:
+                audio = response.read()
+            break
+        except urllib.error.HTTPError as error:
+            spend(-len(words))
+            if error.code == 429 and wait is not None:
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"ElevenLabs said {error.code}: {error.read()[:300]!r}")
     part = path + ".part"
     with open(part, "wb") as f:
         f.write(audio)
