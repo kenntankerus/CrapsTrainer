@@ -166,6 +166,8 @@ dice sets and positions against fair dice, a webcam that reads the dice, and a s
 
 1. **Voices:** the owner will send which ElevenLabs voice ID goes with which character, for
    `CRAPS_ELEVENLABS_VOICES` in `.env`.
+   **Master (Yoda-ish)** is a friend's Yoda impression, cloned in ElevenLabs (Instant Voice Clone) from a
+   script of his lines; its ID goes in the same setting. Without it, edge-tts (Guy, slowed and pitched up) or Kokoro reads.
 2. **Finish the server** (`web/README.md`): fetch the free voice
    (`docker compose exec web python -m web.get_voices`, then `--prepare`), record room and crowd sounds
    (`python -m web.make_sounds`, needs the ElevenLabs key), and add the backup crontab lines.

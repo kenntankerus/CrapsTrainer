@@ -37,7 +37,7 @@ _locks = {}
 # Each character in Kokoro: its voice, and how much higher (or lower) to pitch it
 KOKORO_VOICES = {"Andrew": ("am_michael", 1.0), "Brian": ("am_fenrir", 1.0), "Ava": ("af_heart", 1.0),
                  "Aria": ("af_bella", 1.0), "Shean (Connery-ish)": ("bm_george", 0.94),
-                 "Precious (Gollum-ish)": ("bm_lewis", 1.15)}
+                 "Precious (Gollum-ish)": ("bm_lewis", 1.15), "Master (Yoda-ish)": ("bm_fable", 1.1)}
 KOKORO_FILES = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
 DIRECTED = ("eleven_v4", "eleven_v3")                         # ElevenLabs models that act out [stage directions]
 MOOD_DIRECTIONS = {"hype": "[excited]", "down": "[sighs]"}    # as make_voice_pack.py adds them

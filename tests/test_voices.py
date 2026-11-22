@@ -37,6 +37,17 @@ def test_personal_calls():
     assert calls.personal_call(roll_result([("field", -500, "loses")]), "Kenn") is None
     assert calls.personal_call(None, "Kenn") is None
     assert "precious" in calls.personal_call(roll_result([("yo", 7500, "wins")]), "Kenn", "Precious (Gollum-ish)")[0]
+    assert calls.personal_call(roll_result([("hard_8", 4500, "wins")]), "Kenn", "Master (Yoda-ish)") == \
+        ("Pay the hard eight, we will. Forty-five dollars, it pays.", "cheer")
+
+
+def test_master_has_every_line():
+    """The Yoda-ish stickman says every line in his own words, so none falls back to the plain stickman."""
+    from stickman import CHARACTER_LINES, LINES, voice_lines
+    master = CHARACTER_LINES["Master (Yoda-ish)"]
+    assert set(master) == set(LINES)
+    assert all(variants for variants, _ in master.values())
+    assert voice_lines("Master (Yoda-ish)")["out"][1] == "down"
 
 
 def test_crowd_reactions():
